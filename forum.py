@@ -1,9 +1,11 @@
-<<<<<<< HEAD
+# Firebase 初期化のコード
 import os
 import json
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
+from datetime import datetime
+
 
 # Firebase 初期化（デプロイ環境でも動作するように修正）
 if not firebase_admin._apps:
@@ -55,10 +57,6 @@ with st.form(key="question_form"):
 
             st.success("✅ 質問が送信されました！")
             st.experimental_rerun()
-=======
-import streamlit as st
-import os
-from datetime import datetime
 
 # 質問データを保存するフォルダ
 SAVE_DIR = "questions"
@@ -104,4 +102,3 @@ if os.path.exists(os.path.join(SAVE_DIR, "questions.csv")):
         st.image(file_path, caption=f"投稿日時: {timestamp}", use_column_width=True)
         st.write(f"**質問:** {msg}")
         st.markdown("---")
->>>>>>> d78325a6f290766ecca5bad215e283d52239c6e8
