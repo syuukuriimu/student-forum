@@ -17,4 +17,4 @@ for q in questions:
         st.image(q["image"], caption="添付画像")
 
 if st.button("更新"):
-    st.experimental_rerun()
+    st.rerun()
