@@ -1,7 +1,7 @@
 import qrcode
 import streamlit as st
 
-# Streamlit のタイトル
+# Streamlitのタイトル
 st.title("QRコード生成")
 
 # 生徒用ページのURL（StreamlitアプリのデプロイURLを指定）
@@ -11,9 +11,11 @@ forum_url = "https://student-forum.streamlit.app/"
 qr = qrcode.make(forum_url)
 
 # QRコードを表示
-st.image(qr.get_image(), caption="生徒用ページのQRコード")
+st.image(qr, caption="生徒用ページのQRコード")
+
+# QRコードを保存
+qr.save("qr_code.png")
 
 # ダウンロードリンクを表示
-qr.save("qr_code.png")
 with open("qr_code.png", "rb") as f:
     st.download_button("QRコードをダウンロード", f, file_name="qr_code.png", mime="image/png")
