@@ -1,4 +1,4 @@
-import sqlite3 
+import sqlite3  
 import streamlit as st
 import base64
 from datetime import datetime
@@ -12,8 +12,14 @@ try:
 except sqlite3.OperationalError:
     pass
 
-if "selected_title" not in st.session_state:
-    st.session_state.selected_title = None
+# クエリパラメータから selected_title を取得し、セッションに反映
+query_params = st.experimental_get_query_params()
+if "selected_title" in query_params:
+    st.session_state.selected_title = query_params["selected_title"][0]
+else:
+    if "selected_title" not in st.session_state:
+        st.session_state.selected_title = None
+
 if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 if "pending_delete_title" not in st.session_state:
@@ -28,6 +34,7 @@ def show_title_list():
 
     if st.button("＋ 新規質問を投稿"):
         st.session_state.selected_title = "__new_question__"
+        st.experimental_set_query_params(selected_title="__new_question__")
         st.rerun()
     
     cursor.execute("SELECT DISTINCT title FROM questions ORDER BY timestamp DESC")
@@ -43,6 +50,7 @@ def show_title_list():
             cols = st.columns([4, 1])
             if cols[0].button(title, key=f"title_button_{idx}"):
                 st.session_state.selected_title = title
+                st.experimental_set_query_params(selected_title=title)
                 st.rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
                 st.session_state.pending_delete_title = title
@@ -185,6 +193,7 @@ def show_chat_thread():
                 st.rerun()
     if st.button("戻る"):
         st.session_state.selected_title = None
+        st.experimental_set_query_params(selected_title=None)
         st.rerun()
 
 def create_new_question():
@@ -204,9 +213,11 @@ def create_new_question():
             conn.commit()
             st.success("質問を投稿しました！")
             st.session_state.selected_title = new_title
+            st.experimental_set_query_params(selected_title=new_title)
             st.rerun()
     if st.button("戻る"):
         st.session_state.selected_title = None
+        st.experimental_set_query_params(selected_title=None)
         st.rerun()
 
 if st.session_state.selected_title is None:
