@@ -3,7 +3,8 @@ import streamlit as st
 import base64
 from datetime import datetime
 
-conn = sqlite3.connect("questions.db", check_same_thread=False)
+# 修正: isolation_level=None を追加して autocommit モードにする
+conn = sqlite3.connect("questions.db", check_same_thread=False, isolation_level=None)
 cursor = conn.cursor()
 
 try:
@@ -88,8 +89,8 @@ def show_chat_thread():
             text = sys_msg[0][8:]  # "[SYSTEM]"を除去
             st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
     
-    # 通常メッセージはシステムメッセージを除外して取得
-    cursor.execute("SELECT id, question, image, timestamp, deleted FROM questions WHERE title = ? AND question NOT LIKE '[SYSTEM]%' ORDER BY timestamp", (selected_title,))
+    # 修正: 通常メッセージを日時として正しくソートするため ORDER BY datetime(timestamp) を使用
+    cursor.execute("SELECT id, question, image, timestamp, deleted FROM questions WHERE title = ? AND question NOT LIKE '[SYSTEM]%' ORDER BY datetime(timestamp)", (selected_title,))
     records = cursor.fetchall()
 
     if records and all(rec[4] == 1 for rec in records):
