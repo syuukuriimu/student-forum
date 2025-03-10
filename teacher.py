@@ -12,24 +12,8 @@ try:
 except sqlite3.OperationalError:
     pass
 
-# 新しい API を優先し、なければ旧 API を使用する
-try:
-    query_params = st.query_params
-except AttributeError:
-    query_params = st.experimental_get_query_params()
-
-try:
-    set_query_params = st.set_query_params
-except AttributeError:
-    set_query_params = st.experimental_set_query_params
-
-# クエリパラメータから selected_title を取得し、セッションに反映
-if "selected_title" in query_params:
-    st.session_state.selected_title = query_params["selected_title"][0]
-else:
-    if "selected_title" not in st.session_state:
-        st.session_state.selected_title = None
-
+if "selected_title" not in st.session_state:
+    st.session_state.selected_title = None
 if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 if "pending_delete_title" not in st.session_state:
@@ -42,7 +26,15 @@ def show_title_list():
     st.title("📖 先生フォーラム")
     st.subheader("生徒からの質問一覧")
 
-    cursor.execute("SELECT DISTINCT title FROM questions ORDER BY timestamp DESC")
+    # 修正: 削除済み（先生側）のタイトルはSQLで除外する
+    cursor.execute("""
+        SELECT DISTINCT title FROM questions 
+        WHERE title NOT IN (
+            SELECT title FROM questions 
+            WHERE question = '[SYSTEM]先生は質問フォームを削除しました'
+        )
+        ORDER BY timestamp DESC
+    """)
     titles = cursor.fetchall()
 
     if not titles:
@@ -55,7 +47,6 @@ def show_title_list():
             cols = st.columns([4, 1])
             if cols[0].button(title, key=f"title_button_{idx}"):
                 st.session_state.selected_title = title
-                set_query_params(selected_title=title)
                 st.rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
                 st.session_state.pending_delete_title = title
@@ -195,7 +186,6 @@ def show_chat_thread():
 
     if st.button("戻る"):
         st.session_state.selected_title = None
-        set_query_params(selected_title=None)
         st.rerun()
 
 if st.session_state.selected_title is None:
