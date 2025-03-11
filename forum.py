@@ -1,58 +1,76 @@
-import sqlite3 
 import streamlit as st
 import base64
 from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, firestore
+import sys
 
-# 修正: isolation_level=None を追加して autocommit モードにする
-conn = sqlite3.connect("questions.db", check_same_thread=False, isolation_level=None)
-cursor = conn.cursor()
+# experimental_rerun が存在しない場合の代替処理（今回は明示的な呼び出しを削除）
+if not hasattr(st, "experimental_rerun"):
+    st.experimental_rerun = lambda: sys.exit()
 
-try:
-    cursor.execute("ALTER TABLE questions ADD COLUMN deleted INTEGER DEFAULT 0")
-    conn.commit()
-except sqlite3.OperationalError:
-    pass
+# Firestore 初期化
+if not firebase_admin._apps:
+    cred = credentials.Certificate("serviceAccountKey.json")
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
 
+# キャッシュを用いた Firestore アクセス（TTL 10秒）
+@st.cache_resource(ttl=10)
+def fetch_all_questions():
+    return list(db.collection("questions").order_by("timestamp", direction=firestore.Query.DESCENDING).stream())
+
+@st.cache_resource(ttl=10)
+def fetch_questions_by_title(title):
+    return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
+
+# Session State の初期化
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
 if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 if "pending_delete_title" not in st.session_state:
     st.session_state.pending_delete_title = None
-# 生徒側で削除したタイトルを記録するリスト
 if "deleted_titles_student" not in st.session_state:
     st.session_state.deleted_titles_student = []
 
 def show_title_list():
     st.title("📖 質問フォーラム")
     st.subheader("質問一覧")
-
+    
     if st.button("＋ 新規質問を投稿"):
         st.session_state.selected_title = "__new_question__"
-        st.rerun()
     
-    # 修正: 削除済み（生徒側）のタイトルはSQLで除外する
-    cursor.execute("""
-        SELECT DISTINCT title FROM questions 
-        WHERE title NOT IN (
-            SELECT title FROM questions 
-            WHERE question = '[SYSTEM]生徒はこの質問フォームを削除しました'
-        )
-        ORDER BY timestamp DESC
-    """)
-    titles = cursor.fetchall()
+    # Firestore から全メッセージを timestamp 降順で取得（キャッシュ関数使用）
+    docs = fetch_all_questions()
     
-    if not titles:
+    # 「生徒側削除」のシステムメッセージで登録されたタイトルを除外
+    deleted_system_titles = set()
+    for doc in docs:
+        data = doc.to_dict()
+        if data.get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました"):
+            deleted_system_titles.add(data.get("title"))
+    
+    # 重複除去＆セッション内の削除済みタイトルも除外
+    seen_titles = set()
+    distinct_titles = []
+    for doc in docs:
+        data = doc.to_dict()
+        title = data.get("title")
+        if title in seen_titles:
+            continue
+        seen_titles.add(title)
+        if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
+            continue
+        distinct_titles.append(title)
+    
+    if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        for idx, (title,) in enumerate(titles):
-            # 生徒側で削除済みとしてマークされたタイトルは表示しない
-            if title in st.session_state.deleted_titles_student:
-                continue
+        for idx, title in enumerate(distinct_titles):
             cols = st.columns([4, 1])
             if cols[0].button(title, key=f"title_button_{idx}"):
                 st.session_state.selected_title = title
-                st.rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
                 st.session_state.pending_delete_title = title
             if st.session_state.get("pending_delete_title") == title:
@@ -61,25 +79,30 @@ def show_title_list():
                 if confirm_col1.button("はい", key=f"confirm_delete_{idx}"):
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_student.append(title)
-                    # システムメッセージとして特別な接頭辞を付与して登録
                     time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    cursor.execute("INSERT INTO questions (title, question, timestamp, deleted) VALUES (?, ?, ?, 0)", 
-                                   (title, "[SYSTEM]生徒はこの質問フォームを削除しました", time_str))
-                    conn.commit()
+                    # 生徒側削除システムメッセージを追加
+                    db.collection("questions").add({
+                        "title": title,
+                        "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
+                        "timestamp": time_str,
+                        "deleted": 0,
+                        "image": None
+                    })
                     st.success("タイトルを削除しました。")
-                    # チャット履歴に対して、相手側（先生）の削除システムメッセージが既に登録されている場合、両側削除と判断してデータベースから削除
-                    cursor.execute("SELECT COUNT(*) FROM questions WHERE title = ? AND question = ?", (title, "[SYSTEM]先生は質問フォームを削除しました"))
-                    teacher_count = cursor.fetchone()[0]
-                    if teacher_count > 0:
-                        cursor.execute("DELETE FROM questions WHERE title = ?", (title,))
-                        conn.commit()
-                    st.rerun()
+                    # もし相手側（先生）の削除システムメッセージが存在すれば、両側削除として全件削除
+                    teacher_msgs = list(db.collection("questions")
+                                        .where("title", "==", title)
+                                        .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
+                                        .stream())
+                    if len(teacher_msgs) > 0:
+                        docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
+                        for d in docs_to_delete:
+                            d.reference.delete()
                 if confirm_col2.button("キャンセル", key=f"cancel_delete_{idx}"):
                     st.session_state.pending_delete_title = None
-                    st.rerun()
     
     if st.button("更新"):
-        st.rerun()
+        st.cache_resource.clear()
 
 def show_chat_thread():
     selected_title = st.session_state.selected_title
@@ -89,26 +112,36 @@ def show_chat_thread():
     
     st.title(f"質問詳細: {selected_title}")
     
-    # システムメッセージを中央寄せの赤色テキストとして表示（チャット形式ではなく）
-    cursor.execute("SELECT question FROM questions WHERE title = ? AND question LIKE '[SYSTEM]%' ORDER BY timestamp ASC", (selected_title,))
-    sys_msgs = cursor.fetchall()
+    # 選択されたタイトルのメッセージを timestamp 昇順で取得（キャッシュ関数使用）
+    docs = fetch_questions_by_title(selected_title)
+    
+    # システムメッセージ（[SYSTEM]～）を中央寄せの赤色テキストで表示
+    sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
-            text = sys_msg[0][8:]  # "[SYSTEM]"を除去
+            text = sys_msg.get("question", "")[8:]  # "[SYSTEM]" を除去
             st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
     
-    # 修正: 通常メッセージを日時として正しくソートするため ORDER BY datetime(timestamp) を使用
-    cursor.execute("SELECT id, question, image, timestamp, deleted FROM questions WHERE title = ? AND question NOT LIKE '[SYSTEM]%' ORDER BY datetime(timestamp)", (selected_title,))
-    records = cursor.fetchall()
-
-    if records and all(rec[4] == 2 for rec in records):
+    # 通常メッセージ（システムメッセージ以外）
+    records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
+    
+    if records and all(doc.to_dict().get("deleted", 0) == 2 for doc in records):
         st.markdown("<h3 style='color: red;'>先生はこのフォーラムを削除しました</h3>", unsafe_allow_html=True)
     else:
         if not records:
             st.write("該当する質問が見つかりません。")
             return
-        for (msg_id, msg_text, msg_img, msg_time, deleted) in records:
-            formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
+        for doc in records:
+            data = doc.to_dict()
+            msg_id = doc.id
+            msg_text = data.get("question", "")
+            msg_img = data.get("image")
+            msg_time = data.get("timestamp", "")
+            deleted = data.get("deleted", 0)
+            try:
+                formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                formatted_time = msg_time
             if deleted:
                 st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
                 continue
@@ -147,7 +180,7 @@ def show_chat_thread():
                     """,
                     unsafe_allow_html=True
                 )
-            # 自分の投稿の削除ボタンに削除確認を追加
+            # 自分の投稿の場合、削除ボタンと削除確認を表示
             if is_self:
                 if st.button("🗑", key=f"del_{msg_id}"):
                     st.session_state.pending_delete_msg_id = msg_id
@@ -156,12 +189,10 @@ def show_chat_thread():
                     confirm_col1, confirm_col2 = st.columns(2)
                     if confirm_col1.button("はい", key=f"confirm_del_{msg_id}"):
                         st.session_state.pending_delete_msg_id = None
-                        cursor.execute("UPDATE questions SET deleted = 1 WHERE id = ?", (msg_id,))
-                        conn.commit()
-                        st.rerun()
+                        doc.reference.update({"deleted": 1})
                     if confirm_col2.button("キャンセル", key=f"cancel_del_{msg_id}"):
                         st.session_state.pending_delete_msg_id = None
-                        st.rerun()
+    
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
         """
@@ -176,7 +207,7 @@ def show_chat_thread():
     )
     st.write("---")
     if st.button("更新"):
-        st.rerun()
+        st.cache_resource.clear()
     with st.expander("返信する"):
         with st.form("reply_form_student", clear_on_submit=True):
             reply_text = st.text_area("メッセージを入力")
@@ -185,16 +216,16 @@ def show_chat_thread():
             if submitted:
                 time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 img_data = reply_image.read() if reply_image else None
-                cursor.execute(
-                    "INSERT INTO questions (title, question, image, timestamp, deleted) VALUES (?, ?, ?, ?, 0)",
-                    (selected_title, reply_text, img_data, time_str)
-                )
-                conn.commit()
+                db.collection("questions").add({
+                    "title": selected_title,
+                    "question": reply_text,
+                    "image": img_data,
+                    "timestamp": time_str,
+                    "deleted": 0
+                })
                 st.success("返信を送信しました！")
-                st.rerun()
     if st.button("戻る"):
         st.session_state.selected_title = None
-        st.rerun()
 
 def create_new_question():
     st.title("新規質問を投稿")
@@ -206,23 +237,20 @@ def create_new_question():
         if submitted and new_title and new_text:
             time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             img_data = new_image.read() if new_image else None
-            cursor.execute(
-                "INSERT INTO questions (title, question, image, timestamp, deleted) VALUES (?, ?, ?, ?, 0)",
-                (new_title, new_text, img_data, time_str)
-            )
-            conn.commit()
+            db.collection("questions").add({
+                "title": new_title,
+                "question": new_text,
+                "image": img_data,
+                "timestamp": time_str,
+                "deleted": 0
+            })
             st.success("質問を投稿しました！")
             st.session_state.selected_title = new_title
-            st.rerun()
     if st.button("戻る"):
         st.session_state.selected_title = None
-        st.rerun()
 
+# メイン表示の切り替え
 if st.session_state.selected_title is None:
     show_title_list()
 else:
     show_chat_thread()
-
-conn.close()
-
-

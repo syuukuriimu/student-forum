@@ -1,54 +1,73 @@
-import sqlite3
 import streamlit as st
 import base64
 from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, firestore
+import sys
 
-# 修正: isolation_level=None を追加して autocommit モードにする
-conn = sqlite3.connect("questions.db", check_same_thread=False, isolation_level=None)
-cursor = conn.cursor()
+# experimental_rerun が存在しない場合の代替処理（今回は明示的な呼び出しを削除）
+if not hasattr(st, "experimental_rerun"):
+    st.experimental_rerun = lambda: sys.exit()
 
-try:
-    cursor.execute("ALTER TABLE questions ADD COLUMN deleted INTEGER DEFAULT 0")
-    conn.commit()
-except sqlite3.OperationalError:
-    pass
+# Firestore 初期化
+if not firebase_admin._apps:
+    cred = credentials.Certificate("serviceAccountKey.json")
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
 
+# キャッシュを用いた Firestore アクセス（TTL 10秒）
+@st.cache_resource(ttl=10)
+def fetch_all_questions():
+    return list(db.collection("questions").order_by("timestamp", direction=firestore.Query.DESCENDING).stream())
+
+@st.cache_resource(ttl=10)
+def fetch_questions_by_title(title):
+    return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
+
+# Session State の初期化
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
 if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 if "pending_delete_title" not in st.session_state:
     st.session_state.pending_delete_title = None
-# 先生側で削除したタイトルを記録するリスト
 if "deleted_titles_teacher" not in st.session_state:
     st.session_state.deleted_titles_teacher = []
 
 def show_title_list():
-    st.title("📖 先生フォーラム")
-    st.subheader("生徒からの質問一覧")
-
-    # 修正: 削除済み（先生側）のタイトルはSQLで除外する
-    cursor.execute("""
-        SELECT DISTINCT title FROM questions 
-        WHERE title NOT IN (
-            SELECT title FROM questions 
-            WHERE question = '[SYSTEM]先生は質問フォームを削除しました'
-        )
-        ORDER BY timestamp DESC
-    """)
-    titles = cursor.fetchall()
-
-    if not titles:
+    st.title("📖 質問フォーラム（教師用）")
+    st.subheader("質問一覧")
+    
+    # Firestore から全メッセージを timestamp 降順で取得（キャッシュ関数使用）
+    docs = fetch_all_questions()
+    
+    # 「先生側削除」のシステムメッセージで登録されたタイトルを除外
+    teacher_deleted_titles = set()
+    for doc in docs:
+        data = doc.to_dict()
+        if data.get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました"):
+            teacher_deleted_titles.add(data.get("title"))
+    
+    # 重複除去＆教師側で削除済みのタイトルは除外（生徒側削除は表示する）
+    seen_titles = set()
+    distinct_titles = []
+    for doc in docs:
+        data = doc.to_dict()
+        title = data.get("title")
+        if title in seen_titles:
+            continue
+        seen_titles.add(title)
+        if title in teacher_deleted_titles or title in st.session_state.deleted_titles_teacher:
+            continue
+        distinct_titles.append(title)
+    
+    if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        for idx, (title,) in enumerate(titles):
-            # 先生側で削除済みとしてマークされたタイトルは表示しない
-            if title in st.session_state.deleted_titles_teacher:
-                continue
+        for idx, title in enumerate(distinct_titles):
             cols = st.columns([4, 1])
             if cols[0].button(title, key=f"title_button_{idx}"):
                 st.session_state.selected_title = title
-                st.rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
                 st.session_state.pending_delete_title = title
             if st.session_state.get("pending_delete_title") == title:
@@ -57,99 +76,122 @@ def show_title_list():
                 if confirm_col1.button("はい", key=f"confirm_delete_{idx}"):
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_teacher.append(title)
-                    # システムメッセージとして特別な接頭辞を付与して登録
                     time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    cursor.execute("INSERT INTO questions (title, question, timestamp, deleted) VALUES (?, ?, ?, 0)", 
-                                   (title, "[SYSTEM]先生は質問フォームを削除しました", time_str))
-                    conn.commit()
+                    # 教師側削除システムメッセージを追加
+                    db.collection("questions").add({
+                        "title": title,
+                        "question": "[SYSTEM]先生は質問フォームを削除しました",
+                        "timestamp": time_str,
+                        "deleted": 0,
+                        "image": None
+                    })
                     st.success("タイトルを削除しました。")
-                    # 教員側と生徒側の両方で削除済みの場合、データベースから該当フォーラムを削除
-                    cursor.execute("SELECT COUNT(*) FROM questions WHERE title = ? AND question = ?", (title, "[SYSTEM]生徒はこの質問フォームを削除しました"))
-                    student_count = cursor.fetchone()[0]
-                    if student_count > 0:
-                        cursor.execute("DELETE FROM questions WHERE title = ?", (title,))
-                        conn.commit()
-                    st.rerun()
+                    # もし既に生徒側削除システムメッセージが存在すれば、全件削除
+                    student_msgs = list(db.collection("questions")
+                                        .where("title", "==", title)
+                                        .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
+                                        .stream())
+                    if len(student_msgs) > 0:
+                        docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
+                        for d in docs_to_delete:
+                            d.reference.delete()
+                    st.session_state.selected_title = None
                 if confirm_col2.button("キャンセル", key=f"cancel_delete_{idx}"):
                     st.session_state.pending_delete_title = None
-                    st.rerun()
-
+    
     if st.button("更新"):
-        st.rerun()
+        st.cache_resource.clear()
 
 def show_chat_thread():
     selected_title = st.session_state.selected_title
+    if selected_title is None:
+        st.write("タイトルが選択されていません。")
+        return
+    
     st.title(f"質問詳細: {selected_title}")
     
-    # システムメッセージを中央寄せの赤色テキストとして表示
-    cursor.execute("SELECT question FROM questions WHERE title = ? AND question LIKE '[SYSTEM]%' ORDER BY timestamp ASC", (selected_title,))
-    sys_msgs = cursor.fetchall()
+    # 選択されたタイトルのメッセージを timestamp 昇順で取得（キャッシュ関数使用）
+    docs = fetch_questions_by_title(selected_title)
+    
+    # システムメッセージを中央寄せの赤色テキストで表示
+    sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
-            text = sys_msg[0][8:]  # "[SYSTEM]"を除去
+            text = sys_msg.get("question", "")[8:]
             st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
     
-    # 修正: 通常メッセージを日時として正しくソートするため ORDER BY datetime(timestamp) を使用
-    cursor.execute("SELECT id, question, image, timestamp, deleted FROM questions WHERE title = ? AND question NOT LIKE '[SYSTEM]%' ORDER BY datetime(timestamp)", (selected_title,))
-    records = cursor.fetchall()
-
-    if records and all(rec[4] == 1 for rec in records):
-        st.markdown("<h3 style='color: red;'>生徒はこのフォーラムを削除しました</h3>", unsafe_allow_html=True)
-
-    if not records:
-        st.write("該当する質問が見つかりません。")
-        return
-
-    for (msg_id, msg_text, msg_img, msg_time, deleted) in records:
-        formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
-        if deleted:
-            st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
-            continue
-
-        is_teacher = msg_text.startswith("[先生]")
-        sender = "自分" if is_teacher else "生徒"
-        msg_display = msg_text[len("[先生]"):] if is_teacher else msg_text
-        align = "right" if is_teacher else "left"
-        bg_color = "#DCF8C6" if is_teacher else "#FFFFFF"
-
-        st.markdown(
-            f"""
-            <div style="text-align: {align};">
-              <div style="display: inline-block; background-color: {bg_color}; padding: 10px; border-radius: 10px; max-width: 35%;">
-                <b>{sender}:</b> {msg_display}<br>
-                <small>({formatted_time})</small>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        if msg_img:
-            img_data = base64.b64encode(msg_img).decode("utf-8")
+    records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
+    
+    if records and all(doc.to_dict().get("deleted", 0) == 2 for doc in records):
+        st.markdown("<h3 style='color: red;'>先生はこのフォーラムを削除しました</h3>", unsafe_allow_html=True)
+    else:
+        if not records:
+            st.write("該当する質問が見つかりません。")
+            return
+        for doc in records:
+            data = doc.to_dict()
+            msg_id = doc.id
+            msg_text = data.get("question", "")
+            msg_img = data.get("image")
+            msg_time = data.get("timestamp", "")
+            deleted = data.get("deleted", 0)
+            try:
+                formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                formatted_time = msg_time
+            # 削除済みの場合の表示（forum.py と同様）
+            if deleted:
+                st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
+                continue
+            # 教師が投稿したメッセージは [先生] プレフィックスが付く
+            if msg_text.startswith("[先生]"):
+                sender = "先生"
+                is_self = True
+                msg_display = msg_text[len("[先生]"):].strip()
+                align = "right"
+                bg_color = "#DCF8C6"
+            else:
+                sender = "生徒"
+                is_self = False
+                msg_display = msg_text
+                align = "left"
+                bg_color = "#FFFFFF"
             st.markdown(
                 f"""
                 <div style="text-align: {align};">
-                  <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
+                  <div style="display: inline-block; background-color: {bg_color}; padding: 10px; border-radius: 10px; max-width: 35%;">
+                    <b>{sender}:</b> {msg_display}<br>
+                    <small>({formatted_time})</small>
+                  </div>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
-        # 自分（先生）の投稿削除ボタンに削除確認を追加
-        if is_teacher:
-            if st.button("🗑", key=f"del_{msg_id}"):
-                st.session_state.pending_delete_msg_id = msg_id
-            if st.session_state.get("pending_delete_msg_id") == msg_id:
-                st.warning("本当にこの投稿を削除しますか？")
-                confirm_col1, confirm_col2 = st.columns(2)
-                if confirm_col1.button("はい", key=f"confirm_del_{msg_id}"):
-                    st.session_state.pending_delete_msg_id = None
-                    cursor.execute("UPDATE questions SET deleted = 1 WHERE id = ?", (msg_id,))
-                    conn.commit()
-                    st.rerun()
-                if confirm_col2.button("キャンセル", key=f"cancel_del_{msg_id}"):
-                    st.session_state.pending_delete_msg_id = None
-                    st.rerun()
-
+            if msg_img:
+                img_data = base64.b64encode(msg_img).decode("utf-8")
+                st.markdown(
+                    f"""
+                    <div style="text-align: {align};">
+                      <div style="display: inline-block; padding: 5px; border-radius: 5px;">
+                        <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            # 教師側は自身の投稿に対して削除ボタンを表示
+            if is_self:
+                if st.button("🗑", key=f"del_{msg_id}"):
+                    st.session_state.pending_delete_msg_id = msg_id
+                if st.session_state.get("pending_delete_msg_id") == msg_id:
+                    st.warning("本当にこの投稿を削除しますか？")
+                    confirm_col1, confirm_col2 = st.columns(2)
+                    if confirm_col1.button("はい", key=f"confirm_del_{msg_id}"):
+                        st.session_state.pending_delete_msg_id = None
+                        doc.reference.update({"deleted": 2})
+                    if confirm_col2.button("キャンセル", key=f"cancel_del_{msg_id}"):
+                        st.session_state.pending_delete_msg_id = None
+    
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
         """
@@ -163,35 +205,29 @@ def show_chat_thread():
         unsafe_allow_html=True
     )
     st.write("---")
-
-    if st.button("更新"):
-        st.rerun()
-
+    if st.button("更新", key="update_chat"):
+        st.cache_resource.clear()
     with st.expander("返信する"):
         with st.form("reply_form_teacher", clear_on_submit=True):
-            reply_text = st.text_area("メッセージを入力")
+            reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
             reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
             submitted = st.form_submit_button("送信")
-
-            if submitted and reply_text:
-                teacher_message = "[先生] " + reply_text
+            if submitted:
                 time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 img_data = reply_image.read() if reply_image else None
-                cursor.execute(
-                    "INSERT INTO questions (title, question, image, timestamp, deleted) VALUES (?, ?, ?, ?, 0)",
-                    (selected_title, teacher_message, img_data, time_str)
-                )
-                conn.commit()
+                db.collection("questions").add({
+                    "title": selected_title,
+                    "question": "[先生] " + reply_text,
+                    "image": img_data,
+                    "timestamp": time_str,
+                    "deleted": 0
+                })
                 st.success("返信を送信しました！")
-                st.rerun()
-
     if st.button("戻る"):
         st.session_state.selected_title = None
-        st.rerun()
 
+# メイン表示の切り替え
 if st.session_state.selected_title is None:
     show_title_list()
 else:
     show_chat_thread()
-
-conn.close()
