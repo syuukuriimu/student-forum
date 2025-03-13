@@ -19,6 +19,7 @@ if "authenticated" not in st.session_state:
 
 # ログインフォーム
 if not st.session_state["authenticated"]:
+    # ログインフォームの表示
     st.title("先生専用ログイン")
     password = st.text_input("パスワードを入力してください", type="password")
     if st.button("ログイン"):
@@ -28,9 +29,8 @@ if not st.session_state["authenticated"]:
         else:
             st.error("パスワードが違います")
 else:
-    # ログイン後のみ、質問フォーラムを表示
+    # ログイン後のみ、フォーラムなどのコンテンツを表示
     st.title("先生専用ページ")
-
     
 # Firestore 初期化
 if not firebase_admin._apps:
