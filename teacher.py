@@ -12,8 +12,13 @@ if not hasattr(st, "experimental_rerun"):
 
 # Firestore 初期化
 if not firebase_admin._apps:
-    cred_dict = json.loads(st.secrets["firebase_credentials"])  # secrets.toml から読み込み
-    cred = credentials.Certificate(cred_dict)  
+    try:
+        # Streamlit Cloud用：Secretsに認証情報が設定されている場合
+        cred_dict = json.loads(st.secrets["firebase"])
+        cred = credentials.Certificate(cred_dict)
+    except KeyError:
+        # ローカル用：serviceAccountKey.json が存在する場合
+        cred = credentials.Certificate("serviceAccountKey.json")
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
