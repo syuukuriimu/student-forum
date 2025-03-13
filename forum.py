@@ -4,7 +4,6 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 import sys
-import json  
 
 # experimental_rerun が存在しない場合の代替処理（今回は明示的な呼び出しを削除）
 if not hasattr(st, "experimental_rerun"):
@@ -12,10 +11,8 @@ if not hasattr(st, "experimental_rerun"):
 
 # Firestore 初期化
 if not firebase_admin._apps:
-    cred_dict = json.loads(st.secrets["firebase_credentials"])
-    cred = credentials.Certificate(cred_dict)
+    cred = credentials.Certificate("serviceAccountKey.json")
     firebase_admin.initialize_app(cred)
-
 db = firestore.client()
 
 # キャッシュを用いた Firestore アクセス（TTL 10秒）
