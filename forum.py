@@ -13,13 +13,16 @@ if not hasattr(st, "experimental_rerun"):
 # Firestore 初期化
 if not firebase_admin._apps:
     try:
-        # Cloud の Secrets 設定から取得した値が文字列の場合、辞書型に変換
+        # 取得した値が文字列の場合、ast.literal_eval で辞書に変換する
         firebase_creds = st.secrets["firebase"]
         if isinstance(firebase_creds, str):
             firebase_creds = ast.literal_eval(firebase_creds)
+        # もし AttrDict のようなオブジェクトの場合、明示的に dict() にキャストする
+        elif not isinstance(firebase_creds, dict):
+            firebase_creds = dict(firebase_creds)
         cred = credentials.Certificate(firebase_creds)
     except KeyError:
-        # ローカル環境用のフォールバック（serviceAccountKey.json を利用）
+        # ローカル環境用：serviceAccountKey.json を使用
         cred = credentials.Certificate("serviceAccountKey.json")
     
     firebase_admin.initialize_app(cred)
