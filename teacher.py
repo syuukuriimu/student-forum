@@ -5,7 +5,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import sys
 
-# experimental_rerun の存在確認（ここでは使っていません）
+# experimental_rerun が存在しない場合の代替処理（今回は明示的な呼び出しを削除）
 if not hasattr(st, "experimental_rerun"):
     st.experimental_rerun = lambda: sys.exit()
 
@@ -34,23 +34,21 @@ if "pending_delete_title" not in st.session_state:
 if "deleted_titles_teacher" not in st.session_state:
     st.session_state.deleted_titles_teacher = []
 
-# on_click コールバック関数
-def select_title(title):
-    st.session_state.selected_title = title
-
-def delete_title_callback(title):
-    st.session_state.pending_delete_title = title
-
 def show_title_list():
     st.title("📖 質問フォーラム（教師用）")
     st.subheader("質問一覧")
     
+    # Firestore から全メッセージを timestamp 降順で取得（キャッシュ関数使用）
     docs = fetch_all_questions()
+    
+    # 「先生側削除」のシステムメッセージで登録されたタイトルを除外
     teacher_deleted_titles = set()
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました"):
             teacher_deleted_titles.add(data.get("title"))
+    
+    # 重複除去＆教師側で削除済みのタイトルは除外（生徒側削除は表示する）
     seen_titles = set()
     distinct_titles = []
     for doc in docs:
@@ -68,20 +66,10 @@ def show_title_list():
     else:
         for idx, title in enumerate(distinct_titles):
             cols = st.columns([4, 1])
-            # タイトル選択ボタン（on_click で即時状態更新）
-            cols[0].button(
-                title,
-                key=f"title_button_{idx}",
-                on_click=select_title,
-                args=(title,)
-            )
-            # 削除ボタン（on_click で即時状態更新）
-            cols[1].button(
-                "🗑",
-                key=f"title_del_{idx}",
-                on_click=delete_title_callback,
-                args=(title,)
-            )
+            if cols[0].button(title, key=f"title_button_{idx}"):
+                st.session_state.selected_title = title
+            if cols[1].button("🗑", key=f"title_del_{idx}"):
+                st.session_state.pending_delete_title = title
             if st.session_state.get("pending_delete_title") == title:
                 st.warning(f"本当にこのタイトルを削除しますか？")
                 confirm_col1, confirm_col2 = st.columns(2)
@@ -89,6 +77,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_teacher.append(title)
                     time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # 教師側削除システムメッセージを追加
                     db.collection("questions").add({
                         "title": title,
                         "question": "[SYSTEM]先生は質問フォームを削除しました",
@@ -97,10 +86,11 @@ def show_title_list():
                         "image": None
                     })
                     st.success("タイトルを削除しました。")
+                    # もし既に生徒側削除システムメッセージが存在すれば、全件削除
                     student_msgs = list(db.collection("questions")
-                        .where("title", "==", title)
-                        .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
-                        .stream())
+                                        .where("title", "==", title)
+                                        .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
+                                        .stream())
                     if len(student_msgs) > 0:
                         docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
                         for d in docs_to_delete:
@@ -109,9 +99,7 @@ def show_title_list():
                 if confirm_col2.button("キャンセル", key=f"cancel_delete_{idx}"):
                     st.session_state.pending_delete_title = None
     
-    # 更新ボタン：状態クリアのみ（自動再実行に任せる）
     if st.button("更新"):
-        st.session_state.selected_title = None
         st.cache_resource.clear()
 
 def show_chat_thread():
@@ -122,14 +110,10 @@ def show_chat_thread():
     
     st.title(f"質問詳細: {selected_title}")
     
-    if "questions_by_title_cache" not in st.session_state:
-        st.session_state["questions_by_title_cache"] = {}
-    if selected_title in st.session_state["questions_by_title_cache"]:
-        docs = st.session_state["questions_by_title_cache"][selected_title]
-    else:
-        docs = fetch_questions_by_title(selected_title)
-        st.session_state["questions_by_title_cache"][selected_title] = docs
-
+    # 選択されたタイトルのメッセージを timestamp 昇順で取得（キャッシュ関数使用）
+    docs = fetch_questions_by_title(selected_title)
+    
+    # システムメッセージを中央寄せの赤色テキストで表示
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -137,6 +121,7 @@ def show_chat_thread():
             st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
     
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
+    
     if records and all(doc.to_dict().get("deleted", 0) == 2 for doc in records):
         st.markdown("<h3 style='color: red;'>先生はこのフォーラムを削除しました</h3>", unsafe_allow_html=True)
     else:
@@ -154,9 +139,11 @@ def show_chat_thread():
                 formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
             except Exception:
                 formatted_time = msg_time
+            # 削除済みの場合の表示（forum.py と同様）
             if deleted:
                 st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
                 continue
+            # 教師が投稿したメッセージは [先生] プレフィックスが付く
             if msg_text.startswith("[先生]"):
                 sender = "先生"
                 is_self = True
@@ -192,6 +179,7 @@ def show_chat_thread():
                     """,
                     unsafe_allow_html=True
                 )
+            # 教師側は自身の投稿に対して削除ボタンを表示
             if is_self:
                 if st.button("🗑", key=f"del_{msg_id}"):
                     st.session_state.pending_delete_msg_id = msg_id
@@ -203,7 +191,19 @@ def show_chat_thread():
                         doc.reference.update({"deleted": 2})
                     if confirm_col2.button("キャンセル", key=f"cancel_del_{msg_id}"):
                         st.session_state.pending_delete_msg_id = None
-    # カスタム JavaScript の削除（解決策3：不要なスクロール処理を削除）
+    
+    st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <script>
+        const el = document.getElementById('latest_message');
+        if(el){
+             el.scrollIntoView({behavior: 'smooth'});
+        }
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
     st.write("---")
     if st.button("更新", key="update_chat"):
         st.cache_resource.clear()
@@ -223,9 +223,10 @@ def show_chat_thread():
                     "deleted": 0
                 })
                 st.success("返信を送信しました！")
-    if st.button("戻る", key="back_chat"):
+    if st.button("戻る"):
         st.session_state.selected_title = None
 
+# メイン表示の切り替え
 if st.session_state.selected_title is None:
     show_title_list()
 else:
