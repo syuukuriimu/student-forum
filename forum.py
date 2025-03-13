@@ -11,12 +11,20 @@ import ast
 if not hasattr(st, "experimental_rerun"):
     st.experimental_rerun = lambda: sys.exit()
     
-# CSSでフッターを非表示にする
-st.markdown("""
+# フッターとハンバーガーメニューを非表示にする
+hide_menu = """
     <style>
+        /* 右上のメニュー（≡）を非表示にする */
+        #MainMenu {visibility: hidden;}
+
+        /* 右下のリンクを非表示にする */
         footer {visibility: hidden;}
+
+        /* モバイル版の右下アイコンを隠す */
+        [data-testid="stDecoration"] {display: none;}
     </style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(hide_menu, unsafe_allow_html=True)
 
 # Firestore 初期化
 if not firebase_admin._apps:
