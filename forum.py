@@ -6,9 +6,17 @@ from firebase_admin import credentials, firestore
 import sys
 import ast
 
+
 # experimental_rerun が存在しない場合の代替処理（今回は明示的な呼び出しを削除）
 if not hasattr(st, "experimental_rerun"):
     st.experimental_rerun = lambda: sys.exit()
+    
+# CSSでフッターを非表示にする
+st.markdown("""
+    <style>
+        footer {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
 
 # Firestore 初期化
 if not firebase_admin._apps:
