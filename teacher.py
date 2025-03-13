@@ -28,7 +28,9 @@ if not st.session_state["authenticated"]:
         else:
             st.error("パスワードが違います")
 else:
+    # 認証された場合のみ、コンテンツを表示
     st.title("先生専用ページ")
+    
 # Firestore 初期化
 if not firebase_admin._apps:
     try:
