@@ -4,7 +4,6 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 import sys
-import json  
 
 # experimental_rerun が存在しない場合の代替処理（今回は明示的な呼び出しを削除）
 if not hasattr(st, "experimental_rerun"):
@@ -13,12 +12,12 @@ if not hasattr(st, "experimental_rerun"):
 # Firestore 初期化
 if not firebase_admin._apps:
     try:
-        # Streamlit Cloud用：Secretsに認証情報が設定されている場合
-        cred_dict = json.loads(st.secrets["firebase"])
-        cred = credentials.Certificate(cred_dict)
+        # Streamlit Cloud の Secrets から取得（すでに辞書型のため json.loads() は不要）
+        cred = credentials.Certificate(st.secrets["firebase"])
     except KeyError:
-        # ローカル用：serviceAccountKey.json が存在する場合
+        # ローカル環境用のフォールバック
         cred = credentials.Certificate("serviceAccountKey.json")
+    
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
