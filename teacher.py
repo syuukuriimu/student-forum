@@ -13,26 +13,24 @@ if not hasattr(st, "experimental_rerun"):
 # secrets からパスワードを取得
 TEACHER_PASSWORD = st.secrets.get("teacher_password", {}).get("password", "")
 
-
-
 # 認証状態の管理
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
-
 # ログインフォーム
-if not st.session_state.authenticated:
+if not st.session_state["authenticated"]:
     with st.form("login_form"):
         password = st.text_input("パスワード", type="password")
         submitted = st.form_submit_button("ログイン")
         if submitted:
             if password == TEACHER_PASSWORD:
-                st.session_state.authenticated = True
-                st.experimental_rerun()
+                st.session_state["authenticated"] = True
+                st.experimental_rerun()  # ログイン後にリロード
             else:
                 st.error("パスワードが間違っています")
-    st.stop()
-
+else:
+    # ログイン後のみコンテンツを表示
+    st.title("先生専用ページ")
     
 # Firestore 初期化
 if not firebase_admin._apps:
