@@ -4,8 +4,7 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 import sys
-import ast
-
+import json
 
 # experimental_rerun が存在しない場合の代替処理（今回は明示的な呼び出しを削除）
 if not hasattr(st, "experimental_rerun"):
@@ -29,19 +28,17 @@ st.markdown(hide_menu, unsafe_allow_html=True)
 # Firestore 初期化
 if not firebase_admin._apps:
     try:
-        # 取得した値が文字列の場合、ast.literal_eval で辞書に変換する
-        firebase_creds = st.secrets["firebase"]
-        if isinstance(firebase_creds, str):
-            firebase_creds = ast.literal_eval(firebase_creds)
-        # もし AttrDict のようなオブジェクトの場合、明示的に dict() にキャストする
-        elif not isinstance(firebase_creds, dict):
-            firebase_creds = dict(firebase_creds)
-        cred = credentials.Certificate(firebase_creds)
-    except KeyError:
-        # ローカル環境用：serviceAccountKey.json を使用
-        cred = credentials.Certificate("serviceAccountKey.json")
-    
-    firebase_admin.initialize_app(cred)
+        # 公開環境用: Streamlit secrets から認証情報を取得
+        if "firebase" in st.secrets:
+            firebase_creds = json.loads(st.secrets["firebase"])
+            cred = credentials.Certificate(firebase_creds)
+        else:
+            # ローカル環境用: serviceAccountKey.json を使用
+            cred = credentials.Certificate("serviceAccountKey.json")
+        
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        st.error(f"Firestoreの初期化に失敗しました: {e}")
 
 db = firestore.client()
 
