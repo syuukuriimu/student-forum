@@ -189,20 +189,36 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-        # 画像表示：クリックで新タブで拡大表示
-        if msg_img:
-            img_data = base64.b64encode(msg_img).decode("utf-8")
-            st.markdown(
-                f'''
-                <div style="text-align: {align};">
-                  <a href="data:image/png;base64,{img_data}" target="_blank">
-                    <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
-                  </a>
-                </div>
-                ''',
-                unsafe_allow_html=True
-            )
-        
+        # セッション状態にモーダルの開閉状態を保存
+        if "image_modal_open" not in st.session_state:
+            st.session_state.image_modal_open = None
+
+        def show_image_modal(image_url, key):
+            """画像モーダルを開くための関数"""
+            st.session_state.image_modal_open = key
+
+        def close_image_modal():
+            """画像モーダルを閉じるための関数"""
+            st.session_state.image_modal_open = None
+
+        # 画像のリスト（Firestore から取得したものを想定）
+        image_urls = [
+            "https://via.placeholder.com/150",  # 仮の画像URL
+            "https://via.placeholder.com/200"
+        ]
+
+        for idx, img_url in enumerate(image_urls):
+            # 画像をクリック可能にする
+            if st.button(f"画像 {idx+1}", key=f"btn_{idx}"):
+                show_image_modal(img_url, key=idx)
+
+            # モーダル表示（現在のページのまま拡大）
+            if st.session_state.image_modal_open == idx:
+                with st.modal(f"画像 {idx+1} の拡大表示", key=f"modal_{idx}"):
+                    st.image(img_url, use_column_width=True)
+                    if st.button("閉じる", key=f"close_{idx}"):
+                        close_image_modal()
+                
         # 自分の投稿のみ削除ボタン
         if is_self:
             if st.button("🗑", key=f"del_{msg_id}"):
