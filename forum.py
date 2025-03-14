@@ -192,13 +192,14 @@ def show_chat_thread():
         # 画像がある場合のみ表示
         if msg_img:
             img_data = base64.b64encode(msg_img).decode("utf-8")
-            st.image(f"data:image/png;base64,{img_data}", use_column_width=True)
-                # 自分の投稿のみ削除ボタン
-                
-        if is_self:
-            if st.button("🗑", key=f"del_{msg_id}"):
-                st.session_state.pending_delete_msg_id = msg_id
-                st.rerun()
+            st.markdown(
+                f'''
+                <div style="text-align: {align};">
+                    <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
     
             # 削除確認ボタンを対象メッセージの直下に表示
         if st.session_state.pending_delete_msg_id == msg_id:
