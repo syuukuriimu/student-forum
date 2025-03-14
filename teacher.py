@@ -7,9 +7,8 @@ from firebase_admin import credentials, firestore
 import sys
 import ast
 
-# ===============================
-# ① 認証機能の追加（教師専用ログイン）
-# ===============================
+# 認証機能の追加（教師専用ログイン）
+
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -20,14 +19,10 @@ if not st.session_state.authenticated:
         # st.secrets に [teacher] ブロックで password が設定されている前提
         if password == st.secrets["teacher"]["password"]:
             st.session_state.authenticated = True
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("パスワードが違います。")
     st.stop()
-
-# ===============================
-# ② 以下は forum.py と共通のコード（新規質問投稿機能は除く）
-# ===============================
 
 # Firestore 初期化
 if not firebase_admin._apps:
@@ -105,10 +100,10 @@ def show_title_list():
             cols = st.columns([4, 1])
             if cols[0].button(title, key=f"title_button_{idx}"):
                 st.session_state.selected_title = title
-                st.experimental_rerun()
+                st.rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
                 st.session_state.pending_delete_title = title
-                st.experimental_rerun()
+                st.rerun()
     
     # 削除確認
     if st.session_state.pending_delete_title:
@@ -136,14 +131,14 @@ def show_title_list():
                 for d in docs_to_delete:
                     d.reference.delete()
             st.cache_resource.clear()
-            st.experimental_rerun()
+            st.rerun()
         if confirm_col2.button("キャンセル"):
             st.session_state.pending_delete_title = None
-            st.experimental_rerun()
+            st.rerun()
 
     if st.button("更新"):
         st.cache_resource.clear()
-        st.experimental_rerun()
+        st.rerun()
 
 def show_chat_thread():
     selected_title = st.session_state.selected_title
@@ -223,7 +218,7 @@ def show_chat_thread():
         if is_self:
             if st.button("🗑", key=f"del_{msg_id}"):
                 st.session_state.pending_delete_msg_id = msg_id
-                st.experimental_rerun()
+                st.rerun()
         if st.session_state.pending_delete_msg_id == msg_id:
             st.warning("本当にこの投稿を削除しますか？")
             confirm_col1, confirm_col2 = st.columns(2)
@@ -232,10 +227,10 @@ def show_chat_thread():
                 doc_ref.update({"deleted": 1})
                 st.session_state.pending_delete_msg_id = None
                 st.cache_resource.clear()
-                st.experimental_rerun()
+                st.rerun()
             if confirm_col2.button("キャンセル", key=f"cancel_delete_{msg_id}"):
                 st.session_state.pending_delete_msg_id = None
-                st.experimental_rerun()
+                st.rerun()
 
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
@@ -252,7 +247,7 @@ def show_chat_thread():
     st.write("---")
     if st.button("更新"):
         st.cache_resource.clear()
-        st.experimental_rerun()
+        st.rerun()
     
     with st.expander("返信する", expanded=False):
         with st.form("reply_form_teacher", clear_on_submit=True):
@@ -273,7 +268,7 @@ def show_chat_thread():
                 st.success("返信を送信しました！")
     if st.button("戻る"):
         st.session_state.selected_title = None
-        st.experimental_rerun()
+        st.rerun()
 
 # メイン表示の切り替え
 if st.session_state.selected_title is None:
