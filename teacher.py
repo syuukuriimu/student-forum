@@ -4,11 +4,11 @@ from datetime import datetime
 from zoneinfo import ZoneInfo  # タイムゾーン設定用
 import firebase_admin
 from firebase_admin import credentials, firestore
-import sys
 import ast
 
-# 認証機能の追加（教師専用ログイン）
-
+# ===============================
+# ① 認証機能の追加（教師専用ログイン）
+# ===============================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -16,7 +16,7 @@ if not st.session_state.authenticated:
     st.title("教師ログイン")
     password = st.text_input("パスワードを入力", type="password")
     if st.button("ログイン"):
-        # st.secrets に [teacher] ブロックで password が設定されている前提
+        # st.secrets の [teacher] ブロックで password が設定されている前提
         if password == st.secrets["teacher"]["password"]:
             st.session_state.authenticated = True
             st.rerun()
@@ -24,7 +24,9 @@ if not st.session_state.authenticated:
             st.error("パスワードが違います。")
     st.stop()
 
-# Firestore 初期化
+# ===============================
+# ② Firestore 初期化
+# ===============================
 if not firebase_admin._apps:
     try:
         firebase_creds = st.secrets["firebase"]
@@ -39,7 +41,9 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-# キャッシュを用いた Firestore アクセス（TTL 10秒）
+# ===============================
+# ③ キャッシュを用いた Firestore アクセス（TTL 10秒）
+# ===============================
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
     return list(db.collection("questions").order_by("timestamp", direction=firestore.Query.DESCENDING).stream())
@@ -48,35 +52,40 @@ def fetch_all_questions():
 def fetch_questions_by_title(title):
     return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
 
-# Session State の初期化
+# ===============================
+# ④ Session State の初期化（教師用）
+# ===============================
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
 if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 if "pending_delete_title" not in st.session_state:
     st.session_state.pending_delete_title = None
-if "deleted_titles_student" not in st.session_state:
-    st.session_state.deleted_titles_student = []
+if "deleted_titles_teacher" not in st.session_state:
+    st.session_state.deleted_titles_teacher = []
 
+# ===============================
+# ⑤ 質問一覧の表示（教師用）
+# ===============================
 def show_title_list():
-    st.title("📖 質問フォーラム")
+    st.title("📖 質問フォーラム（教師用）")
     st.subheader("質問一覧")
     
-    # ※ 新規質問投稿ボタンは削除（教師側では既存の質問にのみ対応）
+    # ※ 新規質問投稿ボタンはなし（教師側は既存の質問に対してのみ操作）
     
     # キーワード検索
     keyword = st.text_input("キーワード検索")
     
     docs = fetch_all_questions()
     
-    # 生徒側削除のシステムメッセージで登録されたタイトルを除外
+    # 学生側削除のシステムメッセージで登録されたタイトルは除外
     deleted_system_titles = set()
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました"):
             deleted_system_titles.add(data.get("title"))
     
-    # 重複除去＆セッション内の削除済みタイトルも除外
+    # 重複除去＆教師側削除済みタイトルも除外
     seen_titles = set()
     distinct_titles = []
     for doc in docs:
@@ -85,7 +94,7 @@ def show_title_list():
         if title in seen_titles:
             continue
         seen_titles.add(title)
-        if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
+        if title in deleted_system_titles or title in st.session_state.deleted_titles_teacher:
             continue
         distinct_titles.append(title)
     
@@ -105,28 +114,30 @@ def show_title_list():
                 st.session_state.pending_delete_title = title
                 st.rerun()
     
-    # 削除確認
+    # 削除確認（教師側の場合）
     if st.session_state.pending_delete_title:
         title = st.session_state.pending_delete_title
         st.warning(f"本当にこのタイトルを削除しますか？")
         confirm_col1, confirm_col2 = st.columns(2)
         if confirm_col1.button("はい"):
             st.session_state.pending_delete_title = None
-            st.session_state.deleted_titles_student.append(title)
+            st.session_state.deleted_titles_teacher.append(title)
             time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+            # 教師側削除システムメッセージを追加
             db.collection("questions").add({
                 "title": title,
-                "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
+                "question": "[SYSTEM]先生は質問フォームを削除しました",
                 "timestamp": time_str,
                 "deleted": 0,
                 "image": None
             })
             st.success("タイトルを削除しました。")
-            teacher_msgs = list(db.collection("questions")
+            # もし既に学生側削除システムメッセージが存在すれば、全件削除
+            student_msgs = list(db.collection("questions")
                                 .where("title", "==", title)
-                                .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
+                                .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
                                 .stream())
-            if len(teacher_msgs) > 0:
+            if len(student_msgs) > 0:
                 docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
                 for d in docs_to_delete:
                     d.reference.delete()
@@ -140,13 +151,16 @@ def show_title_list():
         st.cache_resource.clear()
         st.rerun()
 
+# ===============================
+# ⑥ 質問詳細（チャットスレッド）の表示（教師用）
+# ===============================
 def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
     
     docs = fetch_questions_by_title(selected_title)
     
-    # システムメッセージ
+    # システムメッセージ（中央寄せの赤字）を表示
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -175,18 +189,21 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
+        # 教師側の場合：
+        #  - 「[先生]」で始まるメッセージは、教師自身の投稿として扱い、右寄せ・緑色（背景：#DCF8C6）で表示
+        #  - それ以外は学生の投稿として、左寄せ・白色で表示
         if msg_text.startswith("[先生]"):
             sender = "先生"
-            is_self = False
-            msg_display = msg_text[len("[先生]"):].strip()
-            align = "left"
-            bg_color = "#FFFFFF"
-        else:
-            sender = "自分"
             is_self = True
-            msg_display = msg_text
+            msg_display = msg_text[len("[先生]"):].strip()
             align = "right"
             bg_color = "#DCF8C6"
+        else:
+            sender = "生徒"
+            is_self = False
+            msg_display = msg_text
+            align = "left"
+            bg_color = "#FFFFFF"
         
         st.markdown(
             f"""
@@ -214,7 +231,7 @@ def show_chat_thread():
 
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 自分の投稿のみ削除ボタン
+        # 自分（教師）の投稿の場合、削除ボタンを表示
         if is_self:
             if st.button("🗑", key=f"del_{msg_id}"):
                 st.session_state.pending_delete_msg_id = msg_id
@@ -270,7 +287,9 @@ def show_chat_thread():
         st.session_state.selected_title = None
         st.rerun()
 
-# メイン表示の切り替え
+# ===============================
+# ⑦ メイン表示の切り替え
+# ===============================
 if st.session_state.selected_title is None:
     show_title_list()
 else:
