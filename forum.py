@@ -1,6 +1,7 @@
 import streamlit as st
 import base64
 from datetime import datetime
+from zoneinfo import ZoneInfo  # タイムゾーン設定用
 import firebase_admin
 from firebase_admin import credentials, firestore
 import sys
@@ -48,11 +49,9 @@ def show_title_list():
     st.title("📖 質問フォーラム")
     st.subheader("質問一覧")
     
-    # 新規質問を投稿
     if st.button("＋ 新規質問を投稿"):
         st.session_state.selected_title = "__new_question__"
-        # ここでは rerun せず、下のフローで自動的に画面が切り替わる
-        return
+        st.experimental_rerun()
     
     # キーワード検索
     keyword = st.text_input("キーワード検索")
@@ -79,7 +78,7 @@ def show_title_list():
             continue
         distinct_titles.append(title)
     
-    # キーワードフィルタ
+    # キーワードフィルタ（大文字小文字区別なし）
     if keyword:
         distinct_titles = [title for title in distinct_titles if keyword.lower() in title.lower()]
     
@@ -90,10 +89,10 @@ def show_title_list():
             cols = st.columns([4, 1])
             if cols[0].button(title, key=f"title_button_{idx}"):
                 st.session_state.selected_title = title
-                return
+                st.experimental_rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
                 st.session_state.pending_delete_title = title
-                return
+                st.experimental_rerun()
     
     # 削除確認
     if st.session_state.pending_delete_title:
@@ -103,7 +102,7 @@ def show_title_list():
         if confirm_col1.button("はい"):
             st.session_state.pending_delete_title = None
             st.session_state.deleted_titles_student.append(title)
-            time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
             db.collection("questions").add({
                 "title": title,
                 "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
@@ -112,7 +111,6 @@ def show_title_list():
                 "image": None
             })
             st.success("タイトルを削除しました。")
-            # 先生側も削除済みなら全件削除
             teacher_msgs = list(db.collection("questions")
                                 .where("title", "==", title)
                                 .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
@@ -122,11 +120,14 @@ def show_title_list():
                 for d in docs_to_delete:
                     d.reference.delete()
             st.cache_resource.clear()
+            st.experimental_rerun()
         if confirm_col2.button("キャンセル"):
             st.session_state.pending_delete_title = None
+            st.experimental_rerun()
 
     if st.button("更新"):
         st.cache_resource.clear()
+        st.experimental_rerun()
 
 def show_chat_thread():
     selected_title = st.session_state.selected_title
@@ -167,7 +168,6 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
-        # メッセージ表示
         if msg_text.startswith("[先生]"):
             sender = "先生"
             is_self = False
@@ -192,16 +192,18 @@ def show_chat_thread():
             """,
             unsafe_allow_html=True
         )
+        
+        # 画像表示：クリックで新タブで拡大表示
         if msg_img:
             img_data = base64.b64encode(msg_img).decode("utf-8")
             st.markdown(
-                f"""
+                f'''
                 <div style="text-align: {align};">
-                  <div style="display: inline-block; padding: 5px; border-radius: 5px;">
+                  <a href="data:image/png;base64,{img_data}" target="_blank">
                     <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
-                  </div>
+                  </a>
                 </div>
-                """,
+                ''',
                 unsafe_allow_html=True
             )
         
@@ -209,8 +211,8 @@ def show_chat_thread():
         if is_self:
             if st.button("🗑", key=f"del_{msg_id}"):
                 st.session_state.pending_delete_msg_id = msg_id
+                st.experimental_rerun()
     
-    # 投稿削除確認
     if st.session_state.pending_delete_msg_id:
         st.warning("本当にこの投稿を削除しますか？")
         confirm_col1, confirm_col2 = st.columns(2)
@@ -220,8 +222,10 @@ def show_chat_thread():
             doc_ref = db.collection("questions").document(doc_id)
             doc_ref.update({"deleted": 1})
             st.cache_resource.clear()
+            st.experimental_rerun()
         if confirm_col2.button("キャンセル", key="cancel_delete"):
             st.session_state.pending_delete_msg_id = None
+            st.experimental_rerun()
 
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
@@ -235,19 +239,19 @@ def show_chat_thread():
         """,
         unsafe_allow_html=True
     )
-
     st.write("---")
     if st.button("更新"):
         st.cache_resource.clear()
+        st.experimental_rerun()
     
-    # 返信フォーム（連続返信を可能にするため、rerunを削除）
+    # 返信フォーム：送信後に自動でページ更新
     with st.expander("返信する", expanded=True):
         with st.form("reply_form_student", clear_on_submit=True):
             reply_text = st.text_area("メッセージを入力")
             reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
             submitted = st.form_submit_button("送信")
             if submitted:
-                time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                 img_data = reply_image.read() if reply_image else None
                 db.collection("questions").add({
                     "title": selected_title,
@@ -258,11 +262,11 @@ def show_chat_thread():
                 })
                 st.cache_resource.clear()
                 st.success("返信を送信しました！")
-                # ここで experimental_rerun を呼ばず、フォームを表示し続ける
+                st.experimental_rerun()  # 自動更新して新しいページへ
 
     if st.button("戻る"):
         st.session_state.selected_title = None
-        # ここも rerun は不要
+        st.experimental_rerun()
 
 def create_new_question():
     st.title("新規質問を投稿")
@@ -272,7 +276,7 @@ def create_new_question():
         new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
         submitted = st.form_submit_button("投稿")
         if submitted and new_title and new_text:
-            time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
             img_data = new_image.read() if new_image else None
             db.collection("questions").add({
                 "title": new_title,
@@ -284,11 +288,10 @@ def create_new_question():
             st.cache_resource.clear()
             st.success("質問を投稿しました！")
             st.session_state.selected_title = new_title
-            # rerun は呼ばず、下のフローで再表示
+            st.experimental_rerun()
     
     if st.button("戻る"):
         st.session_state.selected_title = None
-        # rerun は呼ばない
 
 # メイン表示の切り替え
 if st.session_state.selected_title is None:
