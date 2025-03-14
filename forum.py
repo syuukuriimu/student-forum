@@ -236,7 +236,7 @@ def show_chat_thread():
         st.rerun()
     
     # 返信フォーム：送信後に自動でページ更新
-    with st.expander("返信する", expanded=True):
+    with st.expander("返信する", expanded=False):
         with st.form("reply_form_student", clear_on_submit=True):
             reply_text = st.text_area("メッセージを入力")
             reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
