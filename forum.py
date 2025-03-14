@@ -189,7 +189,12 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-        # 自分の投稿のみ削除ボタン
+        # 画像がある場合のみ表示
+        if msg_img:
+            img_data = base64.b64encode(msg_img).decode("utf-8")
+            st.image(f"data:image/png;base64,{img_data}", use_column_width=True)
+                # 自分の投稿のみ削除ボタン
+                
         if is_self:
             if st.button("🗑", key=f"del_{msg_id}"):
                 st.session_state.pending_delete_msg_id = msg_id
