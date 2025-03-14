@@ -189,36 +189,33 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-            # 画像モーダルの状態を管理
+                    # 画像モーダルの状態を管理（画像ごとにユニークに管理）
         if "image_modal_open" not in st.session_state:
-            st.session_state.image_modal_open = False
-            st.session_state.image_index = None
+            st.session_state.image_modal_open = {}
 
         def show_image_modal(index):
             """画像モーダルを開く"""
-            st.session_state.image_modal_open = True
-            st.session_state.image_index = index
+            st.session_state.image_modal_open[index] = True
 
-        def close_image_modal():
+        def close_image_modal(index):
             """画像モーダルを閉じる"""
-            st.session_state.image_modal_open = False
-            st.session_state.image_index = None
+            st.session_state.image_modal_open[index] = False
 
-        # 画像表示（クリックで拡大）
-        if msg_img:
-            img_data = base64.b64encode(msg_img).decode("utf-8")
-            
-            # `enumerate()` を使ってユニークな index を作成
-            img_index = hash(img_data) % 1000000  # 一意な識別子を生成
+        # 画像のリスト（ここでは仮に1枚の画像を表示）
+        image_list = [msg_img] if msg_img else []
 
-            # 画像をクリックすると `show_image_modal()` を実行
-            if st.button(f"画像を拡大表示", key=f"expand_button_{img_index}"):
-                show_image_modal(img_index)
+        for index, img in enumerate(image_list):
+            img_data = base64.b64encode(img).decode("utf-8")
 
+            # 画像をクリックすると拡大モーダルを表示
+            if st.button(f"画像を拡大表示", key=f"expand_button_{index}"):
+                show_image_modal(index)
+
+            # 縮小画像を表示
             st.image(f"data:image/png;base64,{img_data}", width=300)
 
             # モーダル風の拡大表示
-            if st.session_state.image_modal_open and st.session_state.image_index == img_index:
+            if st.session_state.image_modal_open.get(index, False):
                 st.markdown(
                     """
                     <style>
@@ -250,8 +247,8 @@ def show_chat_thread():
                 # モーダルの内容（画像と閉じるボタン）
                 with st.container():
                     st.image(f"data:image/png;base64,{img_data}", use_column_width=True)
-                    if st.button("閉じる", key=f"close_button_{img_index}"):
-                        close_image_modal()
+                    if st.button("閉じる", key=f"close_button_{index}"):
+                        close_image_modal(index)
 
                 st.markdown('</div>', unsafe_allow_html=True)
                         
