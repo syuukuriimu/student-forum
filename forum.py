@@ -209,7 +209,8 @@ def show_chat_thread():
             img_data = base64.b64encode(msg_img).decode("utf-8")
 
             # 画像をクリックすると `show_image_modal()` を実行
-            if st.button("画像を拡大表示", key=f"expand_{img_data}"):
+            expand_button_key = f"expand_{img_data}"  # 画像データをキーに使う
+            if st.button("画像を拡大表示", key=expand_button_key):
                 show_image_modal(img_data)
 
             st.image(f"data:image/png;base64,{img_data}", width=300)
@@ -251,7 +252,7 @@ def show_chat_thread():
                         close_image_modal()
 
                 st.markdown('</div>', unsafe_allow_html=True)
-                
+                        
         # 自分の投稿のみ削除ボタン
         if is_self:
             if st.button("🗑", key=f"del_{msg_id}"):
