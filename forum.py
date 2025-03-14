@@ -194,13 +194,16 @@ def show_chat_thread():
             img_data = base64.b64encode(msg_img).decode("utf-8")
             st.markdown(
                 f'''
-                <div style="text-align: {align};">
+                <div style="text-align: {align}; margin-bottom: 15px;">  <!-- 下に余白を追加 -->
                     <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
-    
+
+        # チャットメッセージ間の余白を追加
+        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+            
             # 削除確認ボタンを対象メッセージの直下に表示
         if st.session_state.pending_delete_msg_id == msg_id:
             st.warning("本当にこの投稿を削除しますか？")
