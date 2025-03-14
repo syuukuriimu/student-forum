@@ -35,16 +35,16 @@ def fetch_questions_by_title(title):
     return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
 
 # 先生認証のためのセッション初期化
+# 先生認証のためのセッション初期化
 if "teacher_authenticated" not in st.session_state:
     st.session_state.teacher_authenticated = False
 
 if not st.session_state.teacher_authenticated:
     st.title("先生ログイン")
-    teacher_id = st.text_input("ユーザー名")
     teacher_pw = st.text_input("パスワード", type="password")
     if st.button("ログイン"):
-        # 認証情報は st.secrets["teacher"] に設定しておく
-        if teacher_id == st.secrets["teacher"]["username"] and teacher_pw == st.secrets["teacher"]["password"]:
+        # シークレット情報は .streamlit/secrets.toml に設定しておく
+        if teacher_pw == st.secrets["teacher"]["password"]:
             st.session_state.teacher_authenticated = True
             st.experimental_rerun()
         else:
