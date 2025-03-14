@@ -189,32 +189,27 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-                    # 画像モーダルの状態を管理（画像ごとにユニークに管理）
+                # 画像モーダルの状態を管理
         if "image_modal_open" not in st.session_state:
             st.session_state.image_modal_open = {}
 
-        def show_image_modal(index):
-            """画像モーダルを開く"""
-            st.session_state.image_modal_open[index] = True
-
-        def close_image_modal(index):
-            """画像モーダルを閉じる"""
-            st.session_state.image_modal_open[index] = False
-
-        # 画像のリスト（ここでは仮に1枚の画像を表示）
+        # 画像リスト（仮の画像データ）
         image_list = [msg_img] if msg_img else []
 
         for index, img in enumerate(image_list):
             img_data = base64.b64encode(img).decode("utf-8")
 
-            # 画像をクリックすると拡大モーダルを表示
-            if st.button(f"画像を拡大表示", key=f"expand_button_{index}"):
-                show_image_modal(index)
+            # 画像クリックで拡大表示（ボタンのキーをユニークに）
+            expand_key = f"expand_button_{index}"
+            close_key = f"close_button_{index}"
+
+            if st.button("画像を拡大表示", key=expand_key):
+                st.session_state.image_modal_open[index] = True
 
             # 縮小画像を表示
             st.image(f"data:image/png;base64,{img_data}", width=300)
 
-            # モーダル風の拡大表示
+            # モーダルの開閉チェック
             if st.session_state.image_modal_open.get(index, False):
                 st.markdown(
                     """
@@ -244,13 +239,16 @@ def show_chat_thread():
                 # モーダルの背景
                 st.markdown('<div class="modal-background">', unsafe_allow_html=True)
 
-                # モーダルの内容（画像と閉じるボタン）
+                # モーダル内に画像を表示
                 with st.container():
                     st.image(f"data:image/png;base64,{img_data}", use_column_width=True)
-                    if st.button("閉じる", key=f"close_button_{index}"):
-                        close_image_modal(index)
+                    if st.button("閉じる", key=close_key):
+                        st.session_state.image_modal_open[index] = False
 
                 st.markdown('</div>', unsafe_allow_html=True)
+
+        # Debug: セッション情報を表示
+        st.write(st.session_state.image_modal_open)
                         
         # 自分の投稿のみ削除ボタン
         if is_self:
