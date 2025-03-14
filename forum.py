@@ -203,6 +203,12 @@ def show_chat_thread():
 
         # チャットメッセージ間の余白を追加
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+        
+        # 自分の投稿のみ削除ボタン
+        if is_self:
+            if st.button("🗑", key=f"del_{msg_id}"):
+                st.session_state.pending_delete_msg_id = msg_id
+                st.rerun()
             
             # 削除確認ボタンを対象メッセージの直下に表示
         if st.session_state.pending_delete_msg_id == msg_id:
