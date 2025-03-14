@@ -30,6 +30,10 @@ def fetch_all_questions():
 def fetch_questions_by_title(title):
     return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
 
+# Session State の初期化
+if "selected_title" not in st.session_state:
+    st.session_state.selected_title = None
+
 # --- 投稿者認証のUI ---
 def show_authentication_ui(title):
     st.info("この質問に対して投稿者認証を行いますか？")
