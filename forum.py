@@ -69,9 +69,10 @@ def show_title_list():
         st.markdown("---")
         st.subheader(f"{st.session_state.pending_auth_title} の認証")
         st.write("この質問にアクセスするには認証キーが必要です。認証キーを入力してください。")
+        # 認証フォーム（submit ボタンを key 指定なしで配置）
         with st.form("auth_form"):
-            input_auth_key = st.text_input("認証キーを入力", type="password", key="input_auth_key")
-            submit_auth = st.form_submit_button("認証する", key="auth_submit")
+            input_auth_key = st.text_input("認証キーを入力", type="password")
+            submit_auth = st.form_submit_button("認証する")
         if submit_auth:
             if input_auth_key == "":
                 st.error("認証キーは必須です。")
@@ -115,27 +116,32 @@ def show_title_list():
     
     # 重複除去＆セッション内の削除済みタイトルも除外
     seen_titles = set()
+    # distinct_titles はタイトルとその投稿者名の両方を保持する
     distinct_titles = []
     for doc in docs:
         data = doc.to_dict()
         title = data.get("title")
+        poster = data.get("poster", "匿名")
         if title in seen_titles:
             continue
         seen_titles.add(title)
         if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
             continue
-        distinct_titles.append(title)
+        distinct_titles.append({"title": title, "poster": poster})
     
     # キーワードフィルタ（大文字小文字区別なし）
     if keyword:
-        distinct_titles = [title for title in distinct_titles if keyword.lower() in title.lower()]
+        distinct_titles = [item for item in distinct_titles if keyword.lower() in item["title"].lower()]
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        for idx, title in enumerate(distinct_titles):
+        for idx, item in enumerate(distinct_titles):
+            title = item["title"]
+            poster = item["poster"]
             cols = st.columns([4, 1])
-            if cols[0].button(title, key=f"title_button_{idx}"):
+            # タイトル横に「(投稿者: ○○)」を表示
+            if cols[0].button(f"{title} (投稿者: {poster})", key=f"title_button_{idx}"):
                 # タイトルクリック時、認証処理のため pending_auth_title を設定
                 st.session_state.pending_auth_title = title
                 st.rerun()
@@ -225,7 +231,7 @@ def show_chat_thread():
             )
             continue
         
-        # 教師の投稿は"[先生]"で始まるので、投稿者名を別扱い
+        # 教師の投稿は "[先生]" で始まるので別扱い
         if msg_text.startswith("[先生]"):
             sender = "先生"
             is_self = False
@@ -311,7 +317,7 @@ def show_chat_thread():
             with st.form("reply_form_student", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力", key="reply_text")
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
-                submitted = st.form_submit_button("送信", key="reply_submit")
+                submitted = st.form_submit_button("送信")
                 if submitted:
                     if reply_text == "":
                         st.error("メッセージを入力してください。")
