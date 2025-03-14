@@ -30,37 +30,30 @@ def fetch_all_questions():
 def fetch_questions_by_title(title):
     return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
 
-# Session State の初期化
-if "selected_title" not in st.session_state:
-    st.session_state.selected_title = None
-# 各質問タイトルごとの認証状態（True: 認証済み, False: 閲覧のみ）
-if "authenticated_questions" not in st.session_state:
-    st.session_state.authenticated_questions = {}
-if "pending_delete_msg_id" not in st.session_state:
-    st.session_state.pending_delete_msg_id = None
-if "pending_delete_title" not in st.session_state:
-    st.session_state.pending_delete_title = None
-
 # --- 投稿者認証のUI ---
 def show_authentication_ui(title):
     st.info("この質問に対して投稿者認証を行いますか？")
     col1, col2 = st.columns(2)
     if col1.button("認証する", key=f"auth_yes_{title}"):
         st.session_state.authenticated_questions[title] = "pending"  # 後でパスワード入力させる
-        st.rerun()
+        st.session_state.selected_title = title  # 質問タイトルを選択
+        st.rerun()  # 画面を再表示
     if col2.button("認証せずに閲覧", key=f"auth_no_{title}"):
         st.session_state.authenticated_questions[title] = False
-        st.rerun()
+        st.session_state.selected_title = title  # 質問タイトルを選択
+        st.rerun()  # 画面を再表示
 
 # --- 投稿者認証のチェック（パスワード入力） ---
 def check_authentication(title):
     # 既に認証済み（True または False）ならその状態を返す
     if title in st.session_state.authenticated_questions and st.session_state.authenticated_questions[title] != "pending":
         return st.session_state.authenticated_questions[title]
+
     # 認証未選択の場合は、認証UIを表示
     if title not in st.session_state.authenticated_questions:
         show_authentication_ui(title)
         return None
+
     # 「認証する」を選択して "pending" 状態なら、パスワード入力フォームを表示
     if st.session_state.authenticated_questions.get(title) == "pending":
         st.info("投稿者パスワードを入力してください。")
@@ -87,6 +80,18 @@ def check_authentication(title):
                 st.error("パスワードが違います。")
                 return False
         return None
+
+# 詳細フォーラムページに進む処理
+def go_to_forum_page(title):
+    authentication_status = check_authentication(title)
+    if authentication_status is True:
+        # 認証に成功した場合、詳細フォーラムに進む処理
+        st.write(f"質問タイトル: {title} の詳細フォーラムに進みます。")
+        # ここで詳細フォーラムページの内容を表示する処理を追加
+    elif authentication_status is False:
+        # 認証なしで閲覧の場合、詳細フォーラムに進む処理
+        st.write(f"質問タイトル: {title} の詳細フォーラムに進みます（認証なし）。")
+        # ここで詳細フォーラムページの内容を表示する処理を追加
 
 # --- 質問タイトル一覧の表示 ---
 def show_title_list():
