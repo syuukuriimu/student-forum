@@ -19,7 +19,6 @@ if not firebase_admin._apps:
     except KeyError:
         cred = credentials.Certificate("serviceAccountKey.json")
     firebase_admin.initialize_app(cred)
-
 db = firestore.client()
 
 # キャッシュを用いた Firestore アクセス（TTL 10秒）
@@ -38,13 +37,45 @@ if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 if "pending_delete_title" not in st.session_state:
     st.session_state.pending_delete_title = None
-if "deleted_titles_student" not in st.session_state:
-    st.session_state.deleted_titles_student = []
+if "authenticated_questions" not in st.session_state:
+    st.session_state.authenticated_questions = {}  # 各質問タイトルごとの認証状態
 
+# 投稿者認証をチェックする関数
+def check_authentication(title):
+    # 既に認証済みなら True を返す
+    if st.session_state.authenticated_questions.get(title, False):
+        return True
+    # 認証フォームを表示
+    st.info("この操作を行うには投稿者認証が必要です。投稿時に設定したパスワードを入力してください。")
+    auth_pw = st.text_input("投稿者パスワード", type="password", key=f"auth_pw_{title}")
+    if st.button("認証", key=f"auth_btn_{title}"):
+        # 対象タイトルの新規質問投稿（最初の非システムメッセージ）からパスワードを取得
+        docs = fetch_questions_by_title(title)
+        poster_pw = None
+        for doc in docs:
+            data = doc.to_dict()
+            if not data.get("question", "").startswith("[SYSTEM]"):
+                poster_pw = data.get("poster_password")
+                break
+        if poster_pw is None:
+            st.error("認証情報が見つかりません。")
+            return False
+        if auth_pw == poster_pw:
+            st.success("認証に成功しました！")
+            st.session_state.authenticated_questions[title] = True
+            st.rerun()
+            return True
+        else:
+            st.error("パスワードが違います。")
+            return False
+    return False
+
+# 質問タイトル一覧の表示（投稿者名付き）
 def show_title_list():
     st.title("📖 質問フォーラム")
     st.subheader("質問一覧")
     
+    # 新規質問投稿ボタン
     if st.button("＋ 新規質問を投稿"):
         st.session_state.selected_title = "__new_question__"
         st.rerun()
@@ -54,41 +85,44 @@ def show_title_list():
     
     docs = fetch_all_questions()
     
-    # 生徒側削除のシステムメッセージで登録されたタイトルを除外
+    # 削除された質問タイトル（投稿者側システムメッセージ）を除外
     deleted_system_titles = set()
     for doc in docs:
         data = doc.to_dict()
-        if data.get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました"):
+        if data.get("question", "").startswith("[SYSTEM]投稿者はこの質問フォームを削除しました"):
             deleted_system_titles.add(data.get("title"))
     
-    # 重複除去＆セッション内の削除済みタイトルも除外
-    seen_titles = set()
-    distinct_titles = []
+    # 各タイトルの投稿者情報を取得（最初の投稿を利用）
+    title_info = {}
     for doc in docs:
         data = doc.to_dict()
         title = data.get("title")
-        if title in seen_titles:
+        if title in title_info:
             continue
-        seen_titles.add(title)
-        if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
-            continue
-        distinct_titles.append(title)
+        if not data.get("question", "").startswith("[SYSTEM]"):
+            poster = data.get("poster", "不明")
+            title_info[title] = poster
+    # 削除済みタイトルを除外
+    distinct_titles = {t: poster for t, poster in title_info.items() if t not in deleted_system_titles}
     
-    # キーワードフィルタ（大文字小文字区別なし）
+    # キーワードフィルタ（タイトルまたは投稿者名に一致）
     if keyword:
-        distinct_titles = [title for title in distinct_titles if keyword.lower() in title.lower()]
+        distinct_titles = {t: poster for t, poster in distinct_titles.items() if keyword.lower() in t.lower() or keyword.lower() in poster.lower()}
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        for idx, title in enumerate(distinct_titles):
+        for idx, (title, poster) in enumerate(distinct_titles.items()):
             cols = st.columns([4, 1])
-            if cols[0].button(title, key=f"title_button_{idx}"):
+            # タイトルボタンに「(投稿者: ○○)」を付与
+            if cols[0].button(f"{title} (投稿者: {poster})", key=f"title_button_{idx}"):
                 st.session_state.selected_title = title
                 st.rerun()
+            # タイトル削除ボタン：操作前に投稿者認証を実施
             if cols[1].button("🗑", key=f"title_del_{idx}"):
-                st.session_state.pending_delete_title = title
-                st.rerun()
+                if check_authentication(title):
+                    st.session_state.pending_delete_title = title
+                    st.rerun()
     
     # 削除確認
     if st.session_state.pending_delete_title:
@@ -97,34 +131,27 @@ def show_title_list():
         confirm_col1, confirm_col2 = st.columns(2)
         if confirm_col1.button("はい"):
             st.session_state.pending_delete_title = None
-            st.session_state.deleted_titles_student.append(title)
-            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-            db.collection("questions").add({
-                "title": title,
-                "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
-                "timestamp": time_str,
-                "deleted": 0,
-                "image": None
-            })
-            st.success("タイトルを削除しました。")
-            teacher_msgs = list(db.collection("questions")
-                                .where("title", "==", title)
-                                .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
-                                .stream())
-            if len(teacher_msgs) > 0:
-                docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
-                for d in docs_to_delete:
-                    d.reference.delete()
-            st.cache_resource.clear()
-            st.rerun()
+            if check_authentication(title):
+                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                db.collection("questions").add({
+                    "title": title,
+                    "question": "[SYSTEM]投稿者はこの質問フォームを削除しました",
+                    "timestamp": time_str,
+                    "deleted": 0,
+                    "image": None
+                })
+                st.success("タイトルを削除しました。")
+                st.cache_resource.clear()
+                st.rerun()
         if confirm_col2.button("キャンセル"):
             st.session_state.pending_delete_title = None
             st.rerun()
-
+    
     if st.button("更新"):
         st.cache_resource.clear()
         st.rerun()
 
+# 詳細フォーラム（チャットスレッド）の表示（返信・削除も投稿者認証必須）
 def show_chat_thread():
     selected_title = st.session_state.selected_title
     if selected_title == "__new_question__":
@@ -135,7 +162,7 @@ def show_chat_thread():
     
     docs = fetch_questions_by_title(selected_title)
     
-    # システムメッセージ
+    # システムメッセージ（中央寄せの赤字）
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -164,6 +191,7 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
+        # 判定：教師からの返信は "[先生]" で、投稿者の投稿はそのまま
         if msg_text.startswith("[先生]"):
             sender = "先生"
             is_self = False
@@ -189,28 +217,25 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-        # 画像がある場合のみ表示
+        # 画像表示
         if msg_img:
             img_data = base64.b64encode(msg_img).decode("utf-8")
             st.markdown(
                 f'''
-                <div style="text-align: {align}; margin-bottom: 15px;">  <!-- 下に余白を追加 -->
+                <div style="text-align: {align}; margin-bottom: 15px;">
                     <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
-
-        # チャットメッセージ間の余白を追加
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 自分の投稿のみ削除ボタン
+        # 自分の投稿（投稿者による投稿）の場合、削除ボタンを表示（認証済みの場合のみ）
         if is_self:
-            if st.button("🗑", key=f"del_{msg_id}"):
-                st.session_state.pending_delete_msg_id = msg_id
-                st.rerun()
-            
-            # 削除確認ボタンを対象メッセージの直下に表示
+            if check_authentication(selected_title):
+                if st.button("🗑", key=f"del_{msg_id}"):
+                    st.session_state.pending_delete_msg_id = msg_id
+                    st.rerun()
         if st.session_state.pending_delete_msg_id == msg_id:
             st.warning("本当にこの投稿を削除しますか？")
             confirm_col1, confirm_col2 = st.columns(2)
@@ -223,7 +248,7 @@ def show_chat_thread():
             if confirm_col2.button("キャンセル", key=f"cancel_delete_{msg_id}"):
                 st.session_state.pending_delete_msg_id = None
                 st.rerun()
-
+    
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
         """
@@ -241,38 +266,46 @@ def show_chat_thread():
         st.cache_resource.clear()
         st.rerun()
     
-    # 返信フォーム：送信後に自動でページ更新
-    with st.expander("返信する", expanded=False):
-        with st.form("reply_form_student", clear_on_submit=True):
-            reply_text = st.text_area("メッセージを入力")
-            reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
-            submitted = st.form_submit_button("送信")
-            if submitted:
-                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                img_data = reply_image.read() if reply_image else None
-                db.collection("questions").add({
-                    "title": selected_title,
-                    "question": reply_text,
-                    "image": img_data,
-                    "timestamp": time_str,
-                    "deleted": 0
-                })
-                st.cache_resource.clear()
-                st.success("返信を送信しました！")
-                st.rerun()  # 自動更新して新しいページへ
-
+    # 返信フォーム（投稿者認証済みの場合のみ表示）
+    if check_authentication(selected_title):
+        with st.expander("返信する", expanded=False):
+            with st.form("reply_form_student", clear_on_submit=True):
+                reply_text = st.text_area("メッセージを入力")
+                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
+                submitted = st.form_submit_button("送信")
+                if submitted:
+                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                    img_data = reply_image.read() if reply_image else None
+                    db.collection("questions").add({
+                        "title": selected_title,
+                        "question": reply_text,
+                        "image": img_data,
+                        "timestamp": time_str,
+                        "deleted": 0
+                    })
+                    st.cache_resource.clear()
+                    st.success("返信を送信しました！")
+                    st.rerun()
+    else:
+        st.info("返信するには投稿者認証が必要です。上記で認証してください。")
+    
     if st.button("戻る"):
         st.session_state.selected_title = None
         st.rerun()
 
+# 新規質問投稿フォーム（投稿者認証のためのパスワードも入力）
 def create_new_question():
     st.title("新規質問を投稿")
     with st.form("new_question_form", clear_on_submit=True):
         new_title = st.text_input("質問のタイトルを入力")
         new_text = st.text_area("質問内容を入力")
         new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
+        poster_name = st.text_input("投稿者名を入力（未入力の場合は匿名）")
+        poster_password = st.text_input("投稿者用パスワードを設定", type="password")
         submitted = st.form_submit_button("投稿")
-        if submitted and new_title and new_text:
+        if submitted and new_title and new_text and poster_password:
+            if not poster_name:
+                poster_name = "匿名"
             time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
             img_data = new_image.read() if new_image else None
             db.collection("questions").add({
@@ -280,15 +313,18 @@ def create_new_question():
                 "question": new_text,
                 "image": img_data,
                 "timestamp": time_str,
-                "deleted": 0
+                "deleted": 0,
+                "poster": poster_name,
+                "poster_password": poster_password
             })
+            st.session_state.authenticated_questions[new_title] = True
             st.cache_resource.clear()
             st.success("質問を投稿しました！")
             st.session_state.selected_title = new_title
             st.rerun()
-    
     if st.button("戻る"):
         st.session_state.selected_title = None
+        st.rerun()
 
 # メイン表示の切り替え
 if st.session_state.selected_title is None:
