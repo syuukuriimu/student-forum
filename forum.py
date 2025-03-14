@@ -209,17 +209,17 @@ def show_chat_thread():
                 st.session_state.pending_delete_msg_id = msg_id
                 st.rerun()
     
-    if st.session_state.pending_delete_msg_id:
+    # 削除確認ボタンを対象メッセージの直下に表示
+    if st.session_state.pending_delete_msg_id == msg_id:
         st.warning("本当にこの投稿を削除しますか？")
         confirm_col1, confirm_col2 = st.columns(2)
-        if confirm_col1.button("はい", key="confirm_delete"):
-            doc_id = st.session_state.pending_delete_msg_id
-            st.session_state.pending_delete_msg_id = None
-            doc_ref = db.collection("questions").document(doc_id)
+        if confirm_col1.button("はい", key=f"confirm_delete_{msg_id}"):
+            doc_ref = db.collection("questions").document(msg_id)
             doc_ref.update({"deleted": 1})
+            st.session_state.pending_delete_msg_id = None
             st.cache_resource.clear()
             st.rerun()
-        if confirm_col2.button("キャンセル", key="cancel_delete"):
+        if confirm_col2.button("キャンセル", key=f"cancel_delete_{msg_id}"):
             st.session_state.pending_delete_msg_id = None
             st.rerun()
 
