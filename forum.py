@@ -21,11 +21,11 @@ if not firebase_admin._apps:
         cred = credentials.Certificate(firebase_creds)
     except KeyError:
         cred = credentials.Certificate("serviceAccountKey.json")
-    
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
+# キャッシュを用いた Firestore アクセス（TTL 10秒）
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
     return list(db.collection("questions").order_by("timestamp", direction=firestore.Query.DESCENDING).stream())
@@ -52,14 +52,19 @@ def show_title_list():
         st.session_state.selected_title = "__new_question__"
         st.experimental_rerun()
     
+    # キーワード検索入力の追加
+    keyword = st.text_input("キーワード検索")
+    
     docs = fetch_all_questions()
     
+    # 「生徒側削除」のシステムメッセージで登録されたタイトルを除外
     deleted_system_titles = set()
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました"):
             deleted_system_titles.add(data.get("title"))
     
+    # 重複除去＆セッション内の削除済みタイトルも除外
     seen_titles = set()
     distinct_titles = []
     for doc in docs:
@@ -71,6 +76,10 @@ def show_title_list():
         if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
             continue
         distinct_titles.append(title)
+    
+    # キーワードによるフィルタリング（大文字小文字区別なし）
+    if keyword:
+        distinct_titles = [title for title in distinct_titles if keyword.lower() in title.lower()]
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
@@ -90,6 +99,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_student.append(title)
                     time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # 生徒側削除システムメッセージを追加
                     db.collection("questions").add({
                         "title": title,
                         "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
@@ -98,6 +108,7 @@ def show_title_list():
                         "image": None
                     })
                     st.success("タイトルを削除しました。")
+                    # もし先生側削除のシステムメッセージが存在すれば全件削除
                     teacher_msgs = list(db.collection("questions")
                                         .where("title", "==", title)
                                         .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
@@ -125,6 +136,7 @@ def show_chat_thread():
     
     docs = fetch_questions_by_title(selected_title)
     
+    # システムメッセージを中央寄せの赤色テキストで表示
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -133,8 +145,8 @@ def show_chat_thread():
     
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     
-    if records and all(doc.to_dict().get("deleted", 0) == 2 for doc in records):
-        st.markdown("<h3 style='color: red;'>先生はこのフォーラムを削除しました</h3>", unsafe_allow_html=True)
+    if records and all(doc.to_dict().get("deleted", 0) == 1 for doc in records):
+        st.markdown("<h3 style='color: red;'>自分はこのフォーラムを削除しました</h3>", unsafe_allow_html=True)
     else:
         if not records:
             st.write("該当する質問が見つかりません。")
@@ -182,14 +194,13 @@ def show_chat_thread():
                     f"""
                     <div style="text-align: {align};">
                       <div style="display: inline-block; padding: 5px; border-radius: 5px;">
-                        <a href="data:image/png;base64,{img_data}" target="_blank">
-                          <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
-                        </a>
+                        <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
                       </div>
                     </div>
                     """,
                     unsafe_allow_html=True
                 )
+            # 自分の投稿の場合、削除ボタンと確認を表示
             if is_self:
                 if st.button("🗑", key=f"del_{msg_id}"):
                     st.session_state.pending_delete_msg_id = msg_id
@@ -266,6 +277,7 @@ def create_new_question():
         st.session_state.selected_title = None
         st.experimental_rerun()
 
+# メイン表示の切り替え
 if st.session_state.selected_title is None:
     show_title_list()
 else:

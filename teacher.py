@@ -10,28 +10,6 @@ import ast
 if not hasattr(st, "experimental_rerun"):
     st.experimental_rerun = lambda: sys.exit()
 
-# secrets からパスワードを取得
-TEACHER_PASSWORD = st.secrets.get("teacher_password", {}).get("password", "")
-
-# 認証状態の管理
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-# ログインフォーム
-if not st.session_state["authenticated"]:
-    with st.form("login_form"):
-        password = st.text_input("パスワード", type="password")
-        submitted = st.form_submit_button("ログイン")
-        if submitted:
-            if password == TEACHER_PASSWORD:
-                st.session_state["authenticated"] = True
-                st.experimental_rerun()  # ログイン後にリロード
-            else:
-                st.error("パスワードが間違っています")
-else:
-    # ログイン後のみコンテンツを表示
-    st.title("先生専用ページ")
-    
 # Firestore 初期化
 if not firebase_admin._apps:
     try:
@@ -43,11 +21,11 @@ if not firebase_admin._apps:
         cred = credentials.Certificate(firebase_creds)
     except KeyError:
         cred = credentials.Certificate("serviceAccountKey.json")
-    
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
+# キャッシュを用いた Firestore アクセス（TTL 10秒）
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
     return list(db.collection("questions").order_by("timestamp", direction=firestore.Query.DESCENDING).stream())
@@ -55,6 +33,23 @@ def fetch_all_questions():
 @st.cache_resource(ttl=10)
 def fetch_questions_by_title(title):
     return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
+
+# 先生認証のためのセッション初期化
+if "teacher_authenticated" not in st.session_state:
+    st.session_state.teacher_authenticated = False
+
+if not st.session_state.teacher_authenticated:
+    st.title("先生ログイン")
+    teacher_id = st.text_input("ユーザー名")
+    teacher_pw = st.text_input("パスワード", type="password")
+    if st.button("ログイン"):
+        # 認証情報は st.secrets["teacher"] に設定しておく
+        if teacher_id == st.secrets["teacher"]["username"] and teacher_pw == st.secrets["teacher"]["password"]:
+            st.session_state.teacher_authenticated = True
+            st.experimental_rerun()
+        else:
+            st.error("認証に失敗しました。")
+    st.stop()
 
 # Session State の初期化
 if "selected_title" not in st.session_state:
@@ -70,14 +65,19 @@ def show_title_list():
     st.title("📖 質問フォーラム（教師用）")
     st.subheader("質問一覧")
     
+    # キーワード検索入力の追加
+    keyword = st.text_input("キーワード検索")
+    
     docs = fetch_all_questions()
     
+    # 「先生側削除」のシステムメッセージで登録されたタイトルを除外
     teacher_deleted_titles = set()
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました"):
             teacher_deleted_titles.add(data.get("title"))
     
+    # 重複除去＆教師側で削除済みのタイトルは除外（生徒側削除は表示する）
     seen_titles = set()
     distinct_titles = []
     for doc in docs:
@@ -89,6 +89,10 @@ def show_title_list():
         if title in teacher_deleted_titles or title in st.session_state.deleted_titles_teacher:
             continue
         distinct_titles.append(title)
+    
+    # キーワードによるフィルタリング（大文字小文字を区別しない）
+    if keyword:
+        distinct_titles = [title for title in distinct_titles if keyword.lower() in title.lower()]
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
@@ -108,6 +112,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_teacher.append(title)
                     time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # 教師側削除システムメッセージを追加
                     db.collection("questions").add({
                         "title": title,
                         "question": "[SYSTEM]先生は質問フォームを削除しました",
@@ -116,6 +121,7 @@ def show_title_list():
                         "image": None
                     })
                     st.success("タイトルを削除しました。")
+                    # 既に生徒側削除システムメッセージが存在すれば全件削除
                     student_msgs = list(db.collection("questions")
                                         .where("title", "==", title)
                                         .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
@@ -144,6 +150,7 @@ def show_chat_thread():
     
     docs = fetch_questions_by_title(selected_title)
     
+    # システムメッセージの表示（中央寄せ・赤色）
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -172,6 +179,7 @@ def show_chat_thread():
             if deleted:
                 st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
                 continue
+            # 先生が投稿したメッセージは [先生] プレフィックスが付く
             if msg_text.startswith("[先生]"):
                 sender = "先生"
                 is_self = True
@@ -201,14 +209,13 @@ def show_chat_thread():
                     f"""
                     <div style="text-align: {align};">
                       <div style="display: inline-block; padding: 5px; border-radius: 5px;">
-                        <a href="data:image/png;base64,{img_data}" target="_blank">
-                          <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
-                        </a>
+                        <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
                       </div>
                     </div>
                     """,
                     unsafe_allow_html=True
                 )
+            # 先生側は自身の投稿に対して削除ボタンを表示
             if is_self:
                 if st.button("🗑", key=f"del_{msg_id}"):
                     st.session_state.pending_delete_msg_id = msg_id
@@ -261,6 +268,7 @@ def show_chat_thread():
         st.session_state.selected_title = None
         st.experimental_rerun()
 
+# メイン表示の切り替え
 if st.session_state.selected_title is None:
     show_title_list()
 else:
