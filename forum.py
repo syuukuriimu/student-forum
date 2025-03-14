@@ -189,7 +189,7 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-            # セッション状態にモーダルの開閉状態を保存
+        # 画像モーダルの状態を管理
         if "image_modal_open" not in st.session_state:
             st.session_state.image_modal_open = False
             st.session_state.image_data = None
@@ -204,26 +204,53 @@ def show_chat_thread():
             st.session_state.image_modal_open = False
             st.session_state.image_data = None
 
-        # 画像表示：クリックで拡大表示
+        # 画像表示（クリックで拡大）
         if msg_img:
             img_data = base64.b64encode(msg_img).decode("utf-8")
 
-            # 画像をクリック可能にする（現在のページのまま拡大）
-            st.markdown(
-                f'''
-                <div style="text-align: {align}; cursor: pointer;" onclick="window.image_modal_open=true;">
-                    <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;" onclick="window.image_modal_open=true;">
-                </div>
-                ''',
-                unsafe_allow_html=True
-            )
+            # 画像をクリックすると `show_image_modal()` を実行
+            if st.button("画像を拡大表示", key=f"expand_{img_data}"):
+                show_image_modal(img_data)
 
-            # モーダル表示（現在のページのまま拡大）
+            st.image(f"data:image/png;base64,{img_data}", width=300)
+
+            # モーダル風の拡大表示
             if st.session_state.image_modal_open:
+                st.markdown(
+                    """
+                    <style>
+                    .modal-background {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
+                        background-color: rgba(0, 0, 0, 0.5);
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                    }
+                    .modal-content {
+                        background: white;
+                        padding: 20px;
+                        border-radius: 10px;
+                        text-align: center;
+                    }
+                    </style>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                # モーダルの背景
+                st.markdown('<div class="modal-background">', unsafe_allow_html=True)
+
+                # モーダルの内容（画像と閉じるボタン）
                 with st.container():
-                    st.image(f"data:image/png;base64,{img_data}", use_column_width=True)
+                    st.image(f"data:image/png;base64,{st.session_state.image_data}", use_column_width=True)
                     if st.button("閉じる"):
                         close_image_modal()
+
+                st.markdown('</div>', unsafe_allow_html=True)
                 
         # 自分の投稿のみ削除ボタン
         if is_self:
