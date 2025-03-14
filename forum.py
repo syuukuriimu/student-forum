@@ -53,16 +53,17 @@ def show_title_list():
         st.session_state.selected_title = "__new_question__"
         st.rerun()
     
-    # もし認証待ちのタイトルがある場合、認証選択フォームを表示
+    # 認証待ちのタイトルがある場合、認証フォームを表示
     if st.session_state.pending_auth_title:
         st.subheader(f"{st.session_state.pending_auth_title} の認証")
-        st.write("認証しますか？")
-        col1, col2 = st.columns(2)
-        if col1.button("認証する"):
-            with st.form("auth_form"):
-                input_auth_key = st.text_input("認証キーを入力", type="password")
-                submitted = st.form_submit_button("送信")
-                if submitted:
+        st.write("この質問にアクセスするには認証キーが必要です。認証キーを入力してください。")
+        with st.form("auth_form"):
+            input_auth_key = st.text_input("認証キーを入力", type="password")
+            submit_auth = st.form_submit_button("認証する")
+            if submit_auth:
+                if input_auth_key == "":
+                    st.error("認証キーは必須です。")
+                else:
                     docs = fetch_questions_by_title(st.session_state.pending_auth_title)
                     if docs:
                         stored_auth_key = docs[0].to_dict().get("auth_key", "")
@@ -74,12 +75,12 @@ def show_title_list():
                             st.rerun()
                         else:
                             st.error("認証キーが正しくありません。")
-        if col2.button("認証しない"):
+        if st.button("認証しないで閲覧する"):
             st.session_state.selected_title = st.session_state.pending_auth_title
             st.session_state.is_authenticated = False
             st.session_state.pending_auth_title = None
             st.rerun()
-        return  # 認証フォームが表示されている場合、ここで終了
+        return  # 認証フォーム表示中は、ここで処理終了
 
     # キーワード検索
     keyword = st.text_input("キーワード検索")
@@ -116,14 +117,14 @@ def show_title_list():
         for idx, title in enumerate(distinct_titles):
             cols = st.columns([4, 1])
             if cols[0].button(title, key=f"title_button_{idx}"):
-                # タイトルクリック時に認証状態の選択を行うため、pending_auth_title に設定
+                # タイトルクリック時、認証画面を経由するため、pending_auth_title に設定
                 st.session_state.pending_auth_title = title
                 st.rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
                 st.session_state.pending_delete_title = title
                 st.rerun()
     
-    # 削除確認
+    # タイトル削除確認
     if st.session_state.pending_delete_title:
         title = st.session_state.pending_delete_title
         st.warning("本当にこのタイトルを削除しますか？")
@@ -168,7 +169,7 @@ def show_chat_thread():
     
     docs = fetch_questions_by_title(selected_title)
     
-    # システムメッセージ
+    # システムメッセージの表示
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -307,27 +308,32 @@ def create_new_question():
         new_text = st.text_area("質問内容を入力")
         new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
         poster_name = st.text_input("投稿者名 (空白の場合は匿名)")
-        auth_key = st.text_input("認証キーを設定", type="password")
+        auth_key = st.text_input("認証キーを設定 (必須入力)", type="password")
         submitted = st.form_submit_button("投稿")
-        if submitted and new_title and new_text:
-            if not poster_name:
-                poster_name = "匿名"
-            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-            img_data = new_image.read() if new_image else None
-            db.collection("questions").add({
-                "title": new_title,
-                "question": new_text,
-                "image": img_data,
-                "timestamp": time_str,
-                "deleted": 0,
-                "poster": poster_name,
-                "auth_key": auth_key
-            })
-            st.cache_resource.clear()
-            st.success("質問を投稿しました！")
-            st.session_state.selected_title = new_title
-            st.session_state.is_authenticated = True
-            st.rerun()
+        if submitted:
+            if not new_title or not new_text:
+                st.error("タイトルと質問内容は必須です。")
+            elif auth_key == "":
+                st.error("認証キーは必須入力です。")
+            else:
+                if not poster_name:
+                    poster_name = "匿名"
+                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                img_data = new_image.read() if new_image else None
+                db.collection("questions").add({
+                    "title": new_title,
+                    "question": new_text,
+                    "image": img_data,
+                    "timestamp": time_str,
+                    "deleted": 0,
+                    "poster": poster_name,
+                    "auth_key": auth_key
+                })
+                st.cache_resource.clear()
+                st.success("質問を投稿しました！")
+                st.session_state.selected_title = new_title
+                st.session_state.is_authenticated = True
+                st.rerun()
     
     if st.button("戻る"):
         st.session_state.selected_title = None
