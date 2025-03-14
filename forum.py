@@ -43,24 +43,27 @@ if "pending_auth_title" not in st.session_state:
     st.session_state.pending_auth_title = None
 if "is_authenticated" not in st.session_state:
     st.session_state.is_authenticated = False
+if "poster" not in st.session_state:
+    st.session_state.poster = None
 
 def show_title_list():
     st.title("📖 質問フォーラム")
     st.subheader("質問一覧")
     
     # 新規質問投稿ボタン
-    if st.button("＋ 新規質問を投稿"):
+    if st.button("＋ 新規質問を投稿", key="new_question"):
         st.session_state.selected_title = "__new_question__"
         st.rerun()
     
-    # 認証待ちのタイトルがある場合、認証フォームを表示
+    # 認証待ちのタイトルがある場合、認証フォームを上部に表示（他のタイトルはその下にも表示）
     if st.session_state.pending_auth_title:
+        st.markdown("---")
         st.subheader(f"{st.session_state.pending_auth_title} の認証")
         st.write("この質問にアクセスするには認証キーが必要です。認証キーを入力してください。")
-        with st.form("auth_form"):
-            input_auth_key = st.text_input("認証キーを入力", type="password")
-            submit_auth = st.form_submit_button("認証する")
-            if submit_auth:
+        with st.form("auth_form", clear_on_submit=True):
+            input_auth_key = st.text_input("認証キーを入力", type="password", key="input_auth_key")
+            submitted = st.form_submit_button("認証する", key="auth_submit")
+            if submitted:
                 if input_auth_key == "":
                     st.error("認証キーは必須です。")
                 else:
@@ -70,20 +73,27 @@ def show_title_list():
                         if input_auth_key == stored_auth_key:
                             st.session_state.selected_title = st.session_state.pending_auth_title
                             st.session_state.is_authenticated = True
+                            # 認証時、元の投稿の投稿者名をセッションに保存
+                            st.session_state.poster = docs[0].to_dict().get("poster", "自分")
                             st.session_state.pending_auth_title = None
                             st.success("認証に成功しました。")
                             st.rerun()
                         else:
                             st.error("認証キーが正しくありません。")
-        if st.button("認証しないで閲覧する"):
+        col_auth = st.columns(2)
+        if col_auth[0].button("認証しないで閲覧する", key="no_auth"):
             st.session_state.selected_title = st.session_state.pending_auth_title
             st.session_state.is_authenticated = False
+            st.session_state.poster = None
             st.session_state.pending_auth_title = None
             st.rerun()
-        return  # 認証フォーム表示中は、ここで処理終了
-
+        if col_auth[1].button("戻る", key="auth_back"):
+            st.session_state.pending_auth_title = None
+            st.rerun()
+        st.markdown("---")
+    
     # キーワード検索
-    keyword = st.text_input("キーワード検索")
+    keyword = st.text_input("キーワード検索", key="title_keyword")
     
     docs = fetch_all_questions()
     
@@ -117,7 +127,7 @@ def show_title_list():
         for idx, title in enumerate(distinct_titles):
             cols = st.columns([4, 1])
             if cols[0].button(title, key=f"title_button_{idx}"):
-                # タイトルクリック時、認証画面を経由するため、pending_auth_title に設定
+                # 認証処理のため、pending_auth_title を設定（既に認証中なら上書きしない）
                 st.session_state.pending_auth_title = title
                 st.rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
@@ -129,7 +139,7 @@ def show_title_list():
         title = st.session_state.pending_delete_title
         st.warning("本当にこのタイトルを削除しますか？")
         confirm_col1, confirm_col2 = st.columns(2)
-        if confirm_col1.button("はい"):
+        if confirm_col1.button("はい", key="del_confirm_yes"):
             st.session_state.pending_delete_title = None
             st.session_state.deleted_titles_student.append(title)
             time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
@@ -151,11 +161,11 @@ def show_title_list():
                     d.reference.delete()
             st.cache_resource.clear()
             st.rerun()
-        if confirm_col2.button("キャンセル"):
+        if confirm_col2.button("キャンセル", key="del_confirm_no"):
             st.session_state.pending_delete_title = None
             st.rerun()
 
-    if st.button("更新"):
+    if st.button("更新", key="title_update"):
         st.cache_resource.clear()
         st.rerun()
 
@@ -198,6 +208,7 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
+        # 投稿者名の表示。教師投稿は先頭に"[先生]"がついているので別扱いとする
         if msg_text.startswith("[先生]"):
             sender = "先生"
             is_self = False
@@ -205,11 +216,17 @@ def show_chat_thread():
             align = "left"
             bg_color = "#FFFFFF"
         else:
-            sender = "自分"
-            is_self = True
+            # Firestoreに保存された投稿者名を利用（なければ"自分"とする）
+            poster_name = data.get("poster", "自分")
+            sender = poster_name
+            # 自分の投稿かどうかは、認証済みならセッションの投稿者名と比較
+            if st.session_state.is_authenticated and st.session_state.poster == poster_name:
+                is_self = True
+            else:
+                is_self = False
             msg_display = msg_text
-            align = "right"
-            bg_color = "#DCF8C6"
+            align = "right" if is_self else "left"
+            bg_color = "#DCF8C6" if is_self else "#F0F0F0"
         
         st.markdown(
             f"""
@@ -234,10 +251,9 @@ def show_chat_thread():
                 ''',
                 unsafe_allow_html=True
             )
-
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 自分の投稿のみ削除ボタン（認証状態の場合のみ表示）
+        # 削除ボタンは認証済みかつ自分の投稿の場合のみ表示
         if st.session_state.is_authenticated and is_self:
             if st.button("🗑", key=f"del_{msg_id}"):
                 st.session_state.pending_delete_msg_id = msg_id
@@ -269,47 +285,52 @@ def show_chat_thread():
         unsafe_allow_html=True
     )
     st.write("---")
-    if st.button("更新"):
+    if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
     
-    # 返信フォーム（認証状態の場合のみ表示）
+    # 返信フォーム（認証済みの場合のみ表示）
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
             with st.form("reply_form_student", clear_on_submit=True):
-                reply_text = st.text_area("メッセージを入力")
-                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
-                submitted = st.form_submit_button("送信")
+                reply_text = st.text_area("メッセージを入力", key="reply_text")
+                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
+                submitted = st.form_submit_button("送信", key="reply_submit")
                 if submitted:
-                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                    img_data = reply_image.read() if reply_image else None
-                    db.collection("questions").add({
-                        "title": selected_title,
-                        "question": reply_text,
-                        "image": img_data,
-                        "timestamp": time_str,
-                        "deleted": 0
-                    })
-                    st.cache_resource.clear()
-                    st.success("返信を送信しました！")
-                    st.rerun()
+                    if reply_text == "":
+                        st.error("メッセージを入力してください。")
+                    else:
+                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                        img_data = reply_image.read() if reply_image else None
+                        db.collection("questions").add({
+                            "title": selected_title,
+                            "question": reply_text,
+                            "image": img_data,
+                            "timestamp": time_str,
+                            "deleted": 0,
+                            "poster": st.session_state.poster  # 認証済みの場合、返信にも投稿者名を付与
+                        })
+                        st.cache_resource.clear()
+                        st.success("返信を送信しました！")
+                        st.rerun()
     else:
         st.info("認証されていないため、返信はできません。")
     
-    if st.button("戻る"):
+    if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.session_state.is_authenticated = False
+        st.session_state.poster = None
         st.rerun()
 
 def create_new_question():
     st.title("新規質問を投稿")
     with st.form("new_question_form", clear_on_submit=True):
-        new_title = st.text_input("質問のタイトルを入力")
-        new_text = st.text_area("質問内容を入力")
-        new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
-        poster_name = st.text_input("投稿者名 (空白の場合は匿名)")
-        auth_key = st.text_input("認証キーを設定 (必須入力)", type="password")
-        submitted = st.form_submit_button("投稿")
+        new_title = st.text_input("質問のタイトルを入力", key="new_title")
+        new_text = st.text_area("質問内容を入力", key="new_text")
+        new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
+        poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
+        auth_key = st.text_input("認証キーを設定 (必須入力)", type="password", key="new_auth_key")
+        submitted = st.form_submit_button("投稿", key="new_submit")
         if submitted:
             if not new_title or not new_text:
                 st.error("タイトルと質問内容は必須です。")
@@ -333,9 +354,10 @@ def create_new_question():
                 st.success("質問を投稿しました！")
                 st.session_state.selected_title = new_title
                 st.session_state.is_authenticated = True
+                st.session_state.poster = poster_name
                 st.rerun()
     
-    if st.button("戻る"):
+    if st.button("戻る", key="new_back"):
         st.session_state.selected_title = None
         st.rerun()
 
