@@ -189,42 +189,6 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-                # セッション状態にモーダルの開閉状態を保存
-        if "image_modal_open" not in st.session_state:
-            st.session_state.image_modal_open = False
-            st.session_state.image_data = None
-
-        def show_image_modal(img_data):
-            """画像モーダルを開く"""
-            st.session_state.image_modal_open = True
-            st.session_state.image_data = img_data
-
-        def close_image_modal():
-            """画像モーダルを閉じる"""
-            st.session_state.image_modal_open = False
-            st.session_state.image_data = None
-
-        # 画像表示：クリックで拡大表示
-        if msg_img:
-            img_data = base64.b64encode(msg_img).decode("utf-8")
-
-            # 画像をクリック可能にする（現在のページのまま拡大）
-            st.markdown(
-                f'''
-                <div style="text-align: {align}; cursor: pointer;" onclick="window.image_modal_open=true;">
-                    <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;" onclick="window.image_modal_open=true;">
-                </div>
-                ''',
-                unsafe_allow_html=True
-            )
-
-            # モーダル表示（現在のページのまま拡大）
-            if st.session_state.image_modal_open:
-                with st.container():
-                    st.image(f"data:image/png;base64,{img_data}", use_column_width=True)
-                    if st.button("閉じる"):
-                        close_image_modal()
-                        
         # 自分の投稿のみ削除ボタン
         if is_self:
             if st.button("🗑", key=f"del_{msg_id}"):
