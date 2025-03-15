@@ -76,8 +76,9 @@ def show_new_question_form():
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
         if submitted:
-            # 質問タイトルの重複チェック
-            existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()}
+            # 重複チェック：生徒側で削除されていない質問のみを対象
+            existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
+                               if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒")}
             if new_title in existing_titles:
                 st.error("このタイトルはすでに存在します。")
             elif not new_title or not new_text:
@@ -89,7 +90,7 @@ def show_new_question_form():
                 except Exception:
                     pass
             else:
-                # poster_name が空の場合は "匿名" を設定
+                # poster_nameが空の場合は"匿名"を設定
                 poster_name = poster_name or "匿名"
                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                 img_data = new_image.read() if new_image else None
@@ -130,25 +131,22 @@ def show_title_list():
     docs = fetch_all_questions()
     
     # 生徒側削除システムメッセージ（"[SYSTEM]生徒はこの質問フォームを削除しました"）のタイトルを除外
-    deleted_system_titles = set()
-    for doc in docs:
-        data = doc.to_dict()
-        if data.get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました"):
-            deleted_system_titles.add(data.get("title"))
+    deleted_system_titles = { doc.to_dict().get("title") for doc in docs 
+                              if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒") }
     
-    # ユーザー投稿情報（システムメッセージ以外）の取得
-    # ここで、最初の投稿時の投稿者名と認証コードを固定するため、orig_timestamp を保存
+    # ユーザー投稿情報（システムメッセージ以外）の取得  
+    # ※ここでは、教師の返信（"[先生]" で始まるもの）を除外して、オリジナルの投稿者名・認証コードを保持する
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
-        if data.get("question", "").startswith("[SYSTEM]"):
+        if data.get("question", "").startswith("[SYSTEM]") or data.get("question", "").startswith("[先生]"):
             continue
         title = data.get("title")
         poster = data.get("poster") or "匿名"
         auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
         if title in title_info:
-            # 固定情報は変更せず、更新日時だけを最新のものに更新する
+            # 固定情報は、最初に投稿された情報（orig_timestamp）を保持し、更新日時のみは最新に更新する
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
         else:
@@ -160,19 +158,19 @@ def show_title_list():
             continue
         distinct_titles.append({
             "title": title,
-            "poster": info["poster"],
-            "auth_key": info["auth_key"],  # 固定された認証コード
+            "poster": info["poster"],         # 固定された投稿者名
+            "auth_key": info["auth_key"],       # 固定された認証コード
             "update": info["update"]
         })
     
-    # 検索フィルタ：タイトル or 投稿者名にすべてのキーワードが含まれているか
+    # 検索フィルタ：タイトル or 投稿者名に全キーワードが含まれているか
     if keywords:
         def match(item):
             text = (item["title"] + " " + item["poster"]).lower()
             return all(kw in text for kw in keywords)
         distinct_titles = [item for item in distinct_titles if match(item)]
     
-    # ソート：最終更新日時の降順
+    # ソート：更新日時の降順（最新の返信日時のみが変動）
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
@@ -185,7 +183,7 @@ def show_title_list():
             auth_code = item["auth_key"]
             update_time = item["update"]
             cols = st.columns([8,2])
-            # 投稿者名と認証コードは固定された値を表示（返信によって変更されない）
+            # タイトル横に固定された投稿者名と認証コードを表示
             label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_code})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
@@ -229,6 +227,7 @@ def show_title_list():
         st.markdown("---")
     
     # タイトル削除確認（認証キー確認付き）
+    # ※ 生徒側は認証キーが必要ですが、ここはそのまま
     if st.session_state.pending_delete_title:
         title = st.session_state.pending_delete_title
         st.warning("このタイトルを削除するには認証キーを入力してください。")
@@ -466,9 +465,10 @@ def create_new_question():
         st.rerun()
 
 #####################################
-# メイン表示の切り替え（教師用）
+# メイン表示の切り替え（生徒側）
 #####################################
 if st.session_state.selected_title is None:
     show_title_list()
 else:
     show_chat_thread()
+
