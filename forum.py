@@ -364,8 +364,10 @@ def create_new_question():
             st.error("タイトルと質問内容は必須です。")
         elif auth_key == "":
             st.error("認証キーは必須入力です。")
-            # ここで認証キー部分のみクリアする
-            st.session_state.new_auth_key = ""
+            try:
+                st.session_state["new_auth_key"] = ""
+            except Exception as e:
+                pass
         else:
             if not poster_name:
                 poster_name = "匿名"
@@ -385,12 +387,11 @@ def create_new_question():
             st.session_state.selected_title = new_title
             st.session_state.is_authenticated = True
             st.session_state.poster = poster_name
-            # 入力値のクリア（認証キーはもちろん、必要に応じて他もクリア）
-            st.session_state.new_title = ""
-            st.session_state.new_text = ""
-            st.session_state.new_image = None
-            st.session_state.poster_name = ""
-            st.session_state.new_auth_key = ""
+            # 入力値のクリア（認証キーのみクリアする）
+            try:
+                st.session_state["new_auth_key"] = ""
+            except Exception as e:
+                pass
             st.rerun()
     
     if st.button("戻る", key="new_back"):
