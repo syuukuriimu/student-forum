@@ -401,7 +401,7 @@ def show_chat_thread():
                     # 【修正】質問スレッドの投稿者を `poster` に設定
                     db.collection("questions").add({
                         "title": selected_title,
-                        "question": "[先生] " + reply_text,
+                        "question":reply_text,
                         "poster": first_question_poster,  # ← ここを修正！
                         "image": img_data,
                         "timestamp": time_str,
