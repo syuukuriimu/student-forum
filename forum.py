@@ -85,7 +85,7 @@ def show_new_question_form():
                 except Exception:
                     pass
             else:
-                # poster_name が空の場合は "匿名" を設定
+                # 入力された投稿者名があればその値を、なければ "匿名" を設定
                 poster_name = poster_name or "匿名"
                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                 img_data = new_image.read() if new_image else None
@@ -139,7 +139,7 @@ def show_title_list():
         if data.get("question", "").startswith("[SYSTEM]"):
             continue
         title = data.get("title")
-        # 投稿者名が None なら "匿名" を設定
+        # 投稿者名が None の場合は "匿名" を設定
         poster = data.get("poster") or "匿名"
         timestamp = data.get("timestamp", "")
         auth_key = data.get("auth_key", "")
@@ -179,6 +179,7 @@ def show_title_list():
             poster = item["poster"]
             update_time = item["update"]
             cols = st.columns([8,2])
+            # 認証コードは表示しない（生徒側）
             label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
@@ -406,7 +407,7 @@ def show_chat_thread():
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.session_state.is_authenticated = False
-        # ※ ここでは st.session_state.poster をリセットしないように修正
+        # 投稿者名は維持するためリセットしない
         st.rerun()
 
 #####################################
