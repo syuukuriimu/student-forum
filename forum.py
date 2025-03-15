@@ -20,7 +20,6 @@ if not firebase_admin._apps:
     except KeyError:
         cred = credentials.Certificate("serviceAccountKey.json")
     firebase_admin.initialize_app(cred)
-
 db = firestore.client()
 
 # ===============================
@@ -71,14 +70,14 @@ def show_new_question_form():
             new_text = st.text_area("質問内容を入力", key="new_text")
             new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
             poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-            # 認証キーは必須、10文字までに制限、説明文追加
+            # 認証キーは必須、10文字までに制限
             auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
         if submitted:
-            # 重複チェック：生徒側で削除されていない質問のみを対象
+            # 重複チェック：生徒側で削除されたタイトルは除外
             existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
-                               if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒")}
+                               if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
             if new_title in existing_titles:
                 st.error("このタイトルはすでに存在します。")
             elif not new_title or not new_text:
@@ -90,7 +89,6 @@ def show_new_question_form():
                 except Exception:
                     pass
             else:
-                # poster_nameが空の場合は"匿名"を設定
                 poster_name = poster_name or "匿名"
                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                 img_data = new_image.read() if new_image else None
@@ -124,18 +122,18 @@ def show_title_list():
     
     st.subheader("質問一覧")
     
-    # 検索：入力文字列をスペースで分割して、タイトルおよび投稿者名にすべての単語が含まれているか
+    # 検索：入力文字列をスペースで分割し、タイトルおよび投稿者名に全ての単語が含まれているか
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     
     docs = fetch_all_questions()
     
     # 生徒側削除システムメッセージ（"[SYSTEM]生徒はこの質問フォームを削除しました"）のタイトルを除外
-    deleted_system_titles = { doc.to_dict().get("title") for doc in docs 
-                              if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒") }
+    deleted_system_titles = {doc.to_dict().get("title") for doc in docs 
+                             if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
     
-    # ユーザー投稿情報（システムメッセージ以外）の取得  
-    # ※ここでは、教師の返信（"[先生]" で始まるもの）を除外して、オリジナルの投稿者名・認証コードを保持する
+    # ユーザー投稿情報（システムメッセージ以外）の取得
+    # ※教師の返信は除外して、オリジナルの投稿情報（投稿者名・認証コード）を保持
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
@@ -146,7 +144,7 @@ def show_title_list():
         auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
         if title in title_info:
-            # 固定情報は、最初に投稿された情報（orig_timestamp）を保持し、更新日時のみは最新に更新する
+            # 固定情報は最初の投稿（orig_timestamp）を保持し、更新日時のみ最新に更新
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
         else:
@@ -158,33 +156,33 @@ def show_title_list():
             continue
         distinct_titles.append({
             "title": title,
-            "poster": info["poster"],         # 固定された投稿者名
-            "auth_key": info["auth_key"],       # 固定された認証コード
+            "poster": info["poster"],       # 固定された投稿者名
+            "auth_key": info["auth_key"],     # 固定された認証コード
             "update": info["update"]
         })
     
-    # 検索フィルタ：タイトル or 投稿者名に全キーワードが含まれているか
+    # 検索フィルタ：タイトルまたは投稿者名に全キーワードが含まれているか
     if keywords:
         def match(item):
             text = (item["title"] + " " + item["poster"]).lower()
             return all(kw in text for kw in keywords)
         distinct_titles = [item for item in distinct_titles if match(item)]
     
-    # ソート：更新日時の降順（最新の返信日時のみが変動）
+    # ソート：更新日時の降順（返信日時のみ変動）
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]：タイトルと削除ボタンを同一行に配置
+        # カラム比率 [8,2]：タイトル（投稿者名と認証コードは固定）と削除ボタン
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
             auth_code = item["auth_key"]
             update_time = item["update"]
             cols = st.columns([8,2])
-            # タイトル横に固定された投稿者名と認証コードを表示
-            label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_code})\n最終更新: {update_time}"
+            # 生徒側では認証コードは表示しない
+            label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
                 st.rerun()
@@ -226,8 +224,7 @@ def show_title_list():
             st.rerun()
         st.markdown("---")
     
-    # タイトル削除確認（認証キー確認付き）
-    # ※ 生徒側は認証キーが必要ですが、ここはそのまま
+    # タイトル削除確認（認証キー確認付き） – 生徒側（そのまま）
     if st.session_state.pending_delete_title:
         title = st.session_state.pending_delete_title
         st.warning("このタイトルを削除するには認証キーを入力してください。")
@@ -471,4 +468,3 @@ if st.session_state.selected_title is None:
     show_title_list()
 else:
     show_chat_thread()
-
