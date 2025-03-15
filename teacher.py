@@ -6,24 +6,32 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import ast
 
-# st.cache_resource 対策：存在しなければ st.cache_data を使用
-try:
-    cache_resource = st.cache_resource
-except AttributeError:
-    cache_resource = st.cache_data
+# ===============================
+# セッションステートの初期化（教師用）
+# ===============================
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "is_authenticated" not in st.session_state:
+    st.session_state.is_authenticated = False
+if "selected_title" not in st.session_state:
+    st.session_state.selected_title = None
+if "pending_delete_msg_id" not in st.session_state:
+    st.session_state.pending_delete_msg_id = None
+if "pending_delete_title" not in st.session_state:
+    st.session_state.pending_delete_title = None
+if "deleted_titles_teacher" not in st.session_state:
+    st.session_state.deleted_titles_teacher = []
 
 # ===============================
 # ① 教師専用ログイン（認証機能）
 # ===============================
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-
 if not st.session_state.authenticated:
     st.title("教師ログイン")
     password = st.text_input("パスワードを入力", type="password")
     if st.button("ログイン", key="teacher_login"):
         if password == st.secrets["teacher"]["password"]:
             st.session_state.authenticated = True
+            st.session_state.is_authenticated = True
             st.rerun()
         else:
             st.error("パスワードが違います。")
@@ -49,7 +57,7 @@ db = firestore.client()
 # ===============================
 # ③ キャッシュを用いた Firestore アクセス（TTL 10秒）
 # ===============================
-@cache_resource(ttl=10)
+@st.cache_resource(ttl=10)
 def fetch_all_questions():
     return list(
         db.collection("questions")
@@ -57,7 +65,7 @@ def fetch_all_questions():
         .stream()
     )
 
-@cache_resource(ttl=10)
+@st.cache_resource(ttl=10)
 def fetch_questions_by_title(title):
     return list(
         db.collection("questions")
@@ -65,16 +73,6 @@ def fetch_questions_by_title(title):
         .order_by("timestamp")
         .stream()
     )
-
-# ===============================
-# ④ Session State の初期化（教師用）
-# ===============================
-for key in ["selected_title", "pending_delete_msg_id", "pending_delete_title", "deleted_titles_teacher"]:
-    if key not in st.session_state:
-        if key == "deleted_titles_teacher":
-            st.session_state[key] = []
-        else:
-            st.session_state[key] = None
 
 # ===============================
 # ⑤ 質問一覧の表示（教師用）
@@ -95,11 +93,10 @@ def show_title_list():
         if data.get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました"):
             teacher_deleted_titles.add(data.get("title"))
     
-    # 生徒側削除システムメッセージは教師側では表示対象とする
+    # ユーザー投稿情報（システムメッセージ以外）を取得
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
-        # ユーザー投稿のみ対象（システムメッセージは除外）
         if data.get("question", "").startswith("[SYSTEM]"):
             continue
         title = data.get("title")
@@ -127,19 +124,19 @@ def show_title_list():
     if keyword:
         distinct_titles = [item for item in distinct_titles if keyword.lower() in item["title"].lower()]
     
-    # ソート：最新の更新日時順
+    # ソート：最終更新日時が最新のものを上に表示
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]：タイトルと削除ボタンを同一行に表示（スマホ対応）
+        # カラム比率 [8,2]：タイトルと削除ボタンを右側に配置
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
             auth_key = item["auth_key"]
             update_time = item["update"]
-            cols = st.columns([8,2])
+            cols = st.columns([8, 2])
             label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_key})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"teacher_title_{idx}"):
                 st.session_state.selected_title = title
@@ -174,7 +171,7 @@ def show_title_list():
                         "auth_key": stored_auth_key
                     })
                     st.success("タイトルを削除しました。")
-                    # 両側で削除済みの場合、完全削除
+                    # 両側で削除済みの場合は完全削除
                     student_msgs = list(
                         db.collection("questions")
                         .where("title", "==", title)
@@ -374,9 +371,7 @@ def create_new_question():
         st.session_state.selected_title = None
         st.rerun()
 
-# ===============================
 # メイン表示の切り替え（教師用）
-# ===============================
 if st.session_state.selected_title is None:
     show_title_list()
 else:
