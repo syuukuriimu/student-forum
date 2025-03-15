@@ -59,62 +59,61 @@ if "poster" not in st.session_state:
 # 新規質問投稿フォーム（生徒側）
 ##############################
 def show_new_question_form():
-    st.subheader("新規質問を投稿")
-    with st.form("new_question_form", clear_on_submit=False):
-        new_title = st.text_input("質問のタイトルを入力", key="new_title")
-        new_text = st.text_area("質問内容を入力", key="new_text")
-        new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
-        poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-        # 認証キーは必須、10文字まで、説明文を追加
-        auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
-        st.caption("認証キーは返信やタイトル削除等に必要です。")
-        submitted = st.form_submit_button("投稿")
-    if submitted:
-        if not new_title or not new_text:
-            st.error("タイトルと質問内容は必須です。")
-        elif auth_key == "":
-            st.error("認証キーは必須入力です。")
-            try:
-                st.session_state["new_auth_key"] = ""
-            except Exception:
-                pass
-        else:
-            if not poster_name:
-                poster_name = "匿名"
-            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-            img_data = new_image.read() if new_image else None
-            db.collection("questions").add({
-                "title": new_title,
-                "question": new_text,
-                "image": img_data,
-                "timestamp": time_str,
-                "deleted": 0,
-                "poster": poster_name,
-                "auth_key": auth_key
-            })
-            st.cache_resource.clear()
-            st.success("質問を投稿しました！")
-            st.session_state.selected_title = new_title
-            st.session_state.is_authenticated = True
-            st.session_state.poster = poster_name
-            try:
-                st.session_state["new_auth_key"] = ""
-            except Exception:
-                pass
-            st.rerun()
+    with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
+        with st.form("new_question_form", clear_on_submit=False):
+            new_title = st.text_input("質問のタイトルを入力", key="new_title")
+            new_text = st.text_area("質問内容を入力", key="new_text")
+            new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
+            poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
+            # 認証キーは必須、10文字までに制限、説明文を表示
+            auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
+            st.caption("認証キーは返信やタイトル削除等に必要です。")
+            submitted = st.form_submit_button("投稿")
+        if submitted:
+            if not new_title or not new_text:
+                st.error("タイトルと質問内容は必須です。")
+            elif auth_key == "":
+                st.error("認証キーは必須入力です。")
+                try:
+                    st.session_state["new_auth_key"] = ""
+                except Exception:
+                    pass
+            else:
+                if not poster_name:
+                    poster_name = "匿名"
+                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                img_data = new_image.read() if new_image else None
+                db.collection("questions").add({
+                    "title": new_title,
+                    "question": new_text,
+                    "image": img_data,
+                    "timestamp": time_str,
+                    "deleted": 0,
+                    "poster": poster_name,
+                    "auth_key": auth_key
+                })
+                st.cache_resource.clear()
+                st.success("質問を投稿しました！")
+                st.session_state.selected_title = new_title
+                st.session_state.is_authenticated = True
+                st.session_state.poster = poster_name
+                try:
+                    st.session_state["new_auth_key"] = ""
+                except Exception:
+                    pass
+                st.rerun()
 
 ##############################
 # 質問一覧の表示（生徒側）
 ##############################
 def show_title_list():
     st.title("📖 質問フォーラム")
-    
-    # ① 新規質問投稿フォームを上部に表示
+    # 新規投稿フォームを上部に表示（expanderで閉じた状態から開ける）
     show_new_question_form()
     
     st.subheader("質問一覧")
     
-    # 認証待ちのタイトルがある場合、認証フォームを上部に表示
+    # 認証待ちのタイトルがある場合の認証フォーム
     if st.session_state.pending_auth_title:
         st.markdown("---")
         st.subheader(f"{st.session_state.pending_auth_title} の認証")
@@ -155,61 +154,55 @@ def show_title_list():
     
     docs = fetch_all_questions()
     
-    # ※ 生徒側は、学生が削除したシステムメッセージを除外（教師削除は無視）
+    # 生徒側の削除システムメッセージ（"[SYSTEM]生徒はこの質問フォームを削除しました"）を除外
     deleted_system_titles = set()
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました"):
             deleted_system_titles.add(data.get("title"))
     
-    # 各タイトルの元のユーザー投稿情報を取得
-    # ※ システムメッセージ（"[SYSTEM]..."）は除外するが、もし教師削除システムメッセージのみがある場合は、それも参照
+    # 各タイトルの元の投稿情報（システムメッセージ以外）を取得
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
+        if data.get("question", "").startswith("[SYSTEM]"):
+            continue
         title = data.get("title")
-        # ユーザー投稿であれば優先
-        if not data.get("question", "").startswith("[SYSTEM]"):
-            title_info[title] = {
-                "poster": data.get("poster", "匿名"),
-                "timestamp": data.get("timestamp", "")
-            }
-    # タイトル一覧は、ユーザー投稿情報に基づいて作成（学生削除システムメッセージは除外）
+        poster = data.get("poster", "匿名")
+        timestamp = data.get("timestamp", "")
+        title_info[title] = {"poster": poster, "update": timestamp}
+    
+    # 作成した情報をもとに、削除されていないタイトルのリストを生成
     distinct_titles = []
     for title, info in title_info.items():
-        # 学生側で削除済みタイトルは除外
         if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
             continue
         distinct_titles.append({
             "title": title,
             "poster": info["poster"],
-            "update": info["timestamp"]
+            "update": info["update"]
         })
     
-    # キーワードフィルタ（大文字小文字区別なし）
-    if keyword:
-        distinct_titles = [item for item in distinct_titles if keyword.lower() in item["title"].lower()]
-    
-    # 返信があった場合の最終更新日時を求める（各タイトルごとに fetch_questions_by_title で最新タイムスタンプを取得）
+    # 各タイトルについて、最新の更新日時（返信等）を取得
     for item in distinct_titles:
         title = item["title"]
         docs_title = fetch_questions_by_title(title)
-        # ユーザー投稿のみ対象
         user_times = [doc.to_dict().get("timestamp", "") for doc in docs_title if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
         if user_times:
-            # 最も新しいタイムスタンプ（文字列の比較でも大丈夫な形式であれば）
             item["update"] = max(user_times)
+    
+    # ソート：最終更新日時が最新のものを上に表示
+    distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率を [8,2] にして、削除ボタンを右側に表示（スマホ対応）
+        # カラム比率 [8,2]（スマホ対応で削除ボタンが右側に表示）
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
             update_time = item.get("update", "")
             cols = st.columns([8, 2])
-            # タイトルに投稿者名と最終更新日時を表示
             if cols[0].button(f"{title} (投稿者: {poster})\n最終更新: {update_time}", key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
                 st.rerun()
@@ -232,7 +225,6 @@ def show_title_list():
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_student.append(title)
                     time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                    # 投稿者名は title_info から取得（元の投稿者名が保持される）
                     poster_name = title_info.get(title, {}).get("poster", "匿名")
                     db.collection("questions").add({
                         "title": title,
@@ -243,7 +235,6 @@ def show_title_list():
                         "poster": poster_name
                     })
                     st.success("タイトルを削除しました。")
-                    # 両側で削除されていた場合は、完全にDBから削除
                     teacher_msgs = list(
                         db.collection("questions")
                         .where("title", "==", title)
@@ -308,7 +299,6 @@ def show_chat_thread():
             continue
         
         # 生徒側の場合：
-        #  - 教師の投稿は "[先生]" で始まる場合と区別し、実際の投稿者名を表示する
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
