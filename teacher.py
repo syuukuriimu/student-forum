@@ -311,6 +311,7 @@ def show_chat_thread():
                 if submitted:
                     if not reply_text.strip() and not reply_image:  # メッセージが空 + 画像なし
                         st.error("少なくともメッセージか画像を投稿してください。")
+                        st.rerun()  # 画面を再読み込み
                     else:
                         time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                         img_data = reply_image.read() if reply_image else None
