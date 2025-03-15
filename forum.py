@@ -20,6 +20,7 @@ if not firebase_admin._apps:
     except KeyError:
         cred = credentials.Certificate("serviceAccountKey.json")
     firebase_admin.initialize_app(cred)
+
 db = firestore.client()
 
 # ===============================
@@ -75,9 +76,12 @@ def show_new_question_form():
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
         if submitted:
-            # 重複チェック：生徒側で削除されたタイトルは除外
-            existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
-                               if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
+            # 重複チェック：生徒側で削除されたタイトルは除外する
+            existing_titles = {
+                doc.to_dict().get("title")
+                for doc in fetch_all_questions()
+                if not doc.to_dict().get("question", "").strip().startswith("[SYSTEM]生徒はこの質問フォームを削除しました")
+            }
             if new_title in existing_titles:
                 st.error("このタイトルはすでに存在します。")
             elif not new_title or not new_text:
@@ -128,12 +132,11 @@ def show_title_list():
     
     docs = fetch_all_questions()
     
-    # 生徒側削除システムメッセージ（"[SYSTEM]生徒はこの質問フォームを削除しました"）のタイトルを除外
+    # 生徒側削除システムメッセージのあるタイトルを除外
     deleted_system_titles = {doc.to_dict().get("title") for doc in docs 
-                             if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
+                             if doc.to_dict().get("question", "").strip().startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
     
-    # ユーザー投稿情報（システムメッセージ以外）の取得
-    # ※教師の返信は除外して、オリジナルの投稿情報（投稿者名・認証コード）を保持
+    # オリジナルの投稿情報（システムメッセージおよび教師の返信は除外）
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
@@ -174,14 +177,14 @@ def show_title_list():
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]：タイトル（投稿者名と認証コードは固定）と削除ボタン
+        # カラム比率 [8,2]：タイトルと削除ボタンを同一行に配置
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
             auth_code = item["auth_key"]
             update_time = item["update"]
-            cols = st.columns([8,2])
-            # 生徒側では認証コードは表示しない
+            cols = st.columns([8, 2])
+            # 生徒側では認証コードは表示しない（または任意で表示）
             label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
@@ -224,7 +227,7 @@ def show_title_list():
             st.rerun()
         st.markdown("---")
     
-    # タイトル削除確認（認証キー確認付き） – 生徒側（そのまま）
+    # タイトル削除確認（認証キー確認付き）
     if st.session_state.pending_delete_title:
         title = st.session_state.pending_delete_title
         st.warning("このタイトルを削除するには認証キーを入力してください。")
