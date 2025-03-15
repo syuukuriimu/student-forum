@@ -268,7 +268,7 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        if st.session_state.is_authenticated and msg_text and not msg_text.startswith("[先生]"):
+        if st.session_state.is_authenticated and msg_text and msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"teacher_chat_del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
                 st.rerun()
