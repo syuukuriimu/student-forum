@@ -132,34 +132,47 @@ def show_title_list():
     deleted_system_titles = {doc.to_dict().get("title") for doc in docs 
                              if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
     
-    # ユーザー投稿情報（システムメッセージ以外）の取得
-    # ※教師の返信は除外して、オリジナルの投稿情報（投稿者名・認証コード）を保持
+   # ユーザー投稿情報（システムメッセージ・先生の返信を除外）
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]") or data.get("question", "").startswith("[先生]"):
             continue
+
         title = data.get("title")
-        poster = data.get("poster") or "匿名"
+        poster = data.get("poster") or "匿名"  # 投稿者名が空なら匿名
         auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
+
         if title in title_info:
-            # 固定情報は最初の投稿（orig_timestamp）を保持し、更新日時のみ最新に更新
+            # 🔽 【修正】投稿者名と認証コードを最初の投稿から固定
+            if timestamp < title_info[title]["orig_timestamp"]:
+                title_info[title]["orig_timestamp"] = timestamp
+                title_info[title]["poster"] = poster  # ← 最初の投稿者名を保持
+                title_info[title]["auth_key"] = auth_key  # ← 認証コードも保持
+            # 更新日時のみ最新にする
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
         else:
-            title_info[title] = {"poster": poster, "auth_key": auth_key, "orig_timestamp": timestamp, "update": timestamp}
-    
+            # 🔽 【修正】新しいタイトルが出たときに、投稿者名をしっかり記録
+            title_info[title] = {
+                "poster": poster,  # ← 最初の投稿者名を保持
+                "auth_key": auth_key,  # ← 認証コードを保持
+                "orig_timestamp": timestamp,
+                "update": timestamp
+            }
+
     distinct_titles = []
     for title, info in title_info.items():
         if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
             continue
         distinct_titles.append({
             "title": title,
-            "poster": info["poster"],       # 固定された投稿者名
-            "auth_key": info["auth_key"],     # 固定された認証コード
+            "poster": info["poster"],       # 🔽 【修正】常に最初の投稿者名を使用
+            "auth_key": info["auth_key"],    # 🔽 【修正】常に最初の認証コードを使用
             "update": info["update"]
         })
+
     
     # 検索フィルタ：タイトルまたは投稿者名に全キーワードが含まれているか
     if keywords:
