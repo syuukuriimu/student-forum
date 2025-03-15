@@ -66,25 +66,22 @@ def fetch_questions_by_title(title):
                 .stream())
 
 # ===============================
-# ⑤ 質問一覧の表示（教師用）
+# 質問一覧の表示（教師用）
 # ===============================
 def show_title_list():
     st.title("📖 質問フォーラム（教師用）")
     st.subheader("質問一覧")
     
-    # キーワード検索（投稿タイトルおよび投稿者名を対象、スペース区切り検索に対応）
+    # キーワード検索（投稿タイトルおよび投稿者名を対象、スペース区切り検索）
     keyword_input = st.text_input("キーワード検索")
-    # キーワードをスペースで分割してリスト化
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
-
+    
     docs = fetch_all_questions()
     
-    # 教師側削除システムメッセージを抽出
-    teacher_deleted_titles = set()
-    for doc in docs:
-        data = doc.to_dict()
-        if data.get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました"):
-            teacher_deleted_titles.add(data.get("title"))
+    # 教師側削除システムメッセージのあるタイトルを抽出
+    teacher_deleted_titles = { doc.to_dict().get("title") 
+                              for doc in docs 
+                              if doc.to_dict().get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました") }
     
     # ユーザー投稿情報（システムメッセージ以外）の抽出
     title_info = {}
@@ -114,26 +111,27 @@ def show_title_list():
             "update": info["update"]
         })
     
-    # 検索フィルタ（タイトルまたは投稿者名に全てのキーワードが含まれているか）
+    # 検索フィルタ（タイトルまたは投稿者名に全キーワードが含まれているか）
     if keywords:
         def match(item):
             text = (item["title"] + " " + item["poster"]).lower()
             return all(kw in text for kw in keywords)
         distinct_titles = [item for item in distinct_titles if match(item)]
     
-    # ソート：更新日時の降順
+    # ソート：最終更新日時の降順
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]
+        # カラム比率 [8,2]：タイトルと削除ボタンを同一行に配置
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
             auth_key = item["auth_key"]
             update_time = item["update"]
             cols = st.columns([8, 2])
+            # 認証コードを確実に表示
             label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_key})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"teacher_title_{idx}"):
                 st.session_state.selected_title = title
@@ -142,48 +140,48 @@ def show_title_list():
                 st.session_state.pending_delete_title = title
                 st.rerun()
     
-    # タイトル削除確認（認証キー確認付き）
+    # タイトル削除確認（認証キー確認は不要。確認のみ）
     if st.session_state.pending_delete_title:
         title = st.session_state.pending_delete_title
-        st.warning("このタイトルを削除するには認証キーを入力してください。")
-        with st.form("teacher_delete_title_form"):
-            delete_auth_key = st.text_input("認証キー", type="password")
-            delete_submit = st.form_submit_button("削除する")
-        if delete_submit:
+        st.warning(f"本当に「{title}」を削除してよろしいですか？")
+        cols = st.columns(2)
+        if cols[0].button("はい", key="teacher_del_confirm"):
+            # ここで、該当タイトルの投稿情報から認証コードや投稿者情報を取得
             docs = fetch_questions_by_title(title)
             if docs:
-                stored_auth_key = docs[0].to_dict().get("auth_key", "")
-                if delete_auth_key == stored_auth_key:
-                    st.session_state.pending_delete_title = None
-                    st.session_state.deleted_titles_teacher.append(title)
-                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                    poster_name = title_info.get(title, {}).get("poster", "匿名")
-                    db.collection("questions").add({
-                        "title": title,
-                        "question": "[SYSTEM]先生は質問フォームを削除しました",
-                        "timestamp": time_str,
-                        "deleted": 0,
-                        "image": None,
-                        "poster": poster_name,
-                        "auth_key": stored_auth_key
-                    })
-                    st.success("タイトルを削除しました。")
-                    # 両側で削除された場合は完全削除
-                    student_msgs = list(
-                        db.collection("questions")
-                        .where("title", "==", title)
-                        .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
-                        .stream()
-                    )
-                    if student_msgs:
-                        docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
-                        for d in docs_to_delete:
-                            d.reference.delete()
-                    st.cache_resource.clear()
-                    st.rerun()
-                else:
-                    st.error("認証キーが正しくありません。")
-        if st.button("キャンセル", key="teacher_del_cancel"):
+                data0 = docs[0].to_dict()
+                stored_auth_key = data0.get("auth_key", "")
+                poster_name = data0.get("poster", "匿名")
+            else:
+                stored_auth_key = ""
+                poster_name = "匿名"
+            st.session_state.pending_delete_title = None
+            st.session_state.deleted_titles_teacher.append(title)
+            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+            db.collection("questions").add({
+                "title": title,
+                "question": "[SYSTEM]先生は質問フォームを削除しました",
+                "timestamp": time_str,
+                "deleted": 0,
+                "image": None,
+                "poster": poster_name,
+                "auth_key": stored_auth_key
+            })
+            st.success("タイトルを削除しました。")
+            # 両側で削除された場合は完全にDBから削除
+            student_msgs = list(
+                db.collection("questions")
+                .where("title", "==", title)
+                .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
+                .stream()
+            )
+            if student_msgs:
+                docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
+                for d in docs_to_delete:
+                    d.reference.delete()
+            st.cache_resource.clear()
+            st.rerun()
+        if cols[1].button("キャンセル", key="teacher_del_cancel"):
             st.session_state.pending_delete_title = None
             st.rerun()
     
@@ -217,7 +215,7 @@ def show_chat_thread():
         data = doc.to_dict()
         msg_text = data.get("question", "")
         msg_time = data.get("timestamp", "")
-        poster = data.get("poster", "匿名")
+        poster = data.get("poster") or "匿名"
         deleted = data.get("deleted", 0)
         try:
             formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
@@ -228,7 +226,7 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
-        # 修正：教師の投稿は右側・緑色、学生の投稿は左側・白色
+        # 修正：教師の投稿は右側・背景緑、生徒の投稿は左側・背景白
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
@@ -268,7 +266,7 @@ def show_chat_thread():
             if st.button("🗑", key=f"teacher_chat_del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
                 st.rerun()
-            if st.session_state.pending_delete_msg_id == doc.id:
+            if st.session_state.get("pending_delete_msg_id") == doc.id:
                 st.warning("本当にこの投稿を削除しますか？")
                 confirm_col1, confirm_col2 = st.columns(2)
                 if confirm_col1.button("はい", key=f"teacher_confirm_delete_{doc.id}"):
