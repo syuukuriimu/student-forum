@@ -69,7 +69,6 @@ def show_title_list():
         st.markdown("---")
         st.subheader(f"{st.session_state.pending_auth_title} の認証")
         st.write("この質問にアクセスするには認証キーが必要です。認証キーを入力してください。")
-        # 認証フォーム（submit ボタンを key 指定なしで配置）
         with st.form("auth_form"):
             input_auth_key = st.text_input("認証キーを入力", type="password")
             submit_auth = st.form_submit_button("認証する")
@@ -149,36 +148,44 @@ def show_title_list():
                 st.session_state.pending_delete_title = title
                 st.rerun()
     
-    # タイトル削除確認
+    # タイトル削除確認（認証キー確認付き）
     if st.session_state.pending_delete_title:
         title = st.session_state.pending_delete_title
-        st.warning("本当にこのタイトルを削除しますか？")
-        confirm_col1, confirm_col2 = st.columns(2)
-        if confirm_col1.button("はい", key="del_confirm_yes"):
-            st.session_state.pending_delete_title = None
-            st.session_state.deleted_titles_student.append(title)
-            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-            db.collection("questions").add({
-                "title": title,
-                "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
-                "timestamp": time_str,
-                "deleted": 0,
-                "image": None
-            })
-            st.success("タイトルを削除しました。")
-            teacher_msgs = list(
-                db.collection("questions")
-                .where("title", "==", title)
-                .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
-                .stream()
-            )
-            if len(teacher_msgs) > 0:
-                docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
-                for d in docs_to_delete:
-                    d.reference.delete()
-            st.cache_resource.clear()
-            st.rerun()
-        if confirm_col2.button("キャンセル", key="del_confirm_no"):
+        st.warning("このタイトルを削除するには認証キーを入力してください。")
+        with st.form("delete_title_form"):
+            delete_auth_key = st.text_input("認証キー", type="password")
+            delete_submit = st.form_submit_button("削除する")
+        if delete_submit:
+            docs = fetch_questions_by_title(title)
+            if docs:
+                stored_auth_key = docs[0].to_dict().get("auth_key", "")
+                if delete_auth_key == stored_auth_key:
+                    st.session_state.pending_delete_title = None
+                    st.session_state.deleted_titles_student.append(title)
+                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                    db.collection("questions").add({
+                        "title": title,
+                        "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
+                        "timestamp": time_str,
+                        "deleted": 0,
+                        "image": None
+                    })
+                    st.success("タイトルを削除しました。")
+                    teacher_msgs = list(
+                        db.collection("questions")
+                        .where("title", "==", title)
+                        .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
+                        .stream()
+                    )
+                    if teacher_msgs:
+                        docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
+                        for d in docs_to_delete:
+                            d.reference.delete()
+                    st.cache_resource.clear()
+                    st.rerun()
+                else:
+                    st.error("認証キーが正しくありません。")
+        if st.button("キャンセル", key="del_confirm_no"):
             st.session_state.pending_delete_title = None
             st.rerun()
 
@@ -231,7 +238,7 @@ def show_chat_thread():
             )
             continue
         
-        # 教師の投稿は "[先生]" で始まるので別扱い
+        # 教師の投稿は "[先生]" で始まるため、左寄せ、背景白
         if msg_text.startswith("[先生]"):
             sender = "先生"
             is_self = False
@@ -239,16 +246,14 @@ def show_chat_thread():
             align = "left"
             bg_color = "#FFFFFF"
         else:
-            poster_name = data.get("poster", "自分")
+            # 生徒の投稿：常に右寄せとする
+            poster_name = data.get("poster", "匿名")
             sender = poster_name
-            # 認証済みの場合、セッションの poster と比較して自分の投稿か判断
-            if st.session_state.is_authenticated and st.session_state.poster == poster_name:
-                is_self = True
-            else:
-                is_self = False
+            is_self = True
+            align = "right"
+            # 認証済みなら緑、未認証なら白
+            bg_color = "#DCF8C6" if st.session_state.is_authenticated else "#FFFFFF"
             msg_display = msg_text
-            align = "right" if is_self else "left"
-            bg_color = "#DCF8C6" if is_self else "#F0F0F0"
         
         st.markdown(
             f"""
@@ -262,7 +267,7 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-        # 画像がある場合の表示
+        # 画像表示（ある場合）
         if msg_img:
             img_data = base64.b64encode(msg_img).decode("utf-8")
             st.markdown(
@@ -275,8 +280,8 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 削除ボタン（認証済みかつ自分の投稿の場合のみ表示）
-        if st.session_state.is_authenticated and is_self:
+        # 削除ボタンは、認証済みかつ生徒の投稿の場合のみ表示
+        if st.session_state.is_authenticated and msg_text and not msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{msg_id}"):
                 st.session_state.pending_delete_msg_id = msg_id
                 st.rerun()
@@ -352,7 +357,7 @@ def create_new_question():
         new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
         poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
         auth_key = st.text_input("認証キーを設定 (必須入力)", type="password", key="new_auth_key")
-        submitted = st.form_submit_button("投稿", key="new_submit")
+        submitted = st.form_submit_button("投稿")
         if submitted:
             if not new_title or not new_text:
                 st.error("タイトルと質問内容は必須です。")
