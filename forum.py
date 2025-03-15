@@ -1,7 +1,7 @@
 import streamlit as st
 import base64
 from datetime import datetime
-from zoneinfo import ZoneInfo # タイムゾーン設定用
+from zoneinfo import ZoneInfo  # タイムゾーン設定用
 import firebase_admin
 from firebase_admin import credentials, firestore
 import ast
@@ -76,7 +76,11 @@ def show_new_question_form():
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
         if submitted:
-            if not new_title or not new_text:
+            # 質問タイトルの重複チェック
+            existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()}
+            if new_title in existing_titles:
+                st.error("このタイトルはすでに存在します。")
+            elif not new_title or not new_text:
                 st.error("タイトルと質問内容は必須です。")
             elif auth_key == "":
                 st.error("認証キーは必須入力です。")
@@ -85,7 +89,7 @@ def show_new_question_form():
                 except Exception:
                     pass
             else:
-                # 入力された投稿者名があればその値を、なければ "匿名" を設定
+                # poster_name が空の場合は "匿名" を設定
                 poster_name = poster_name or "匿名"
                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                 img_data = new_image.read() if new_image else None
@@ -133,21 +137,22 @@ def show_title_list():
             deleted_system_titles.add(data.get("title"))
     
     # ユーザー投稿情報（システムメッセージ以外）の取得
+    # ここで、最初の投稿時の投稿者名と認証コードを固定するため、orig_timestamp を保存
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]"):
             continue
         title = data.get("title")
-        # 投稿者名が None の場合は "匿名" を設定
         poster = data.get("poster") or "匿名"
-        timestamp = data.get("timestamp", "")
         auth_key = data.get("auth_key", "")
+        timestamp = data.get("timestamp", "")
         if title in title_info:
+            # 固定情報は変更せず、更新日時だけを最新のものに更新する
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
         else:
-            title_info[title] = {"poster": poster, "update": timestamp, "auth_key": auth_key}
+            title_info[title] = {"poster": poster, "auth_key": auth_key, "orig_timestamp": timestamp, "update": timestamp}
     
     distinct_titles = []
     for title, info in title_info.items():
@@ -156,7 +161,7 @@ def show_title_list():
         distinct_titles.append({
             "title": title,
             "poster": info["poster"],
-            "auth_key": info["auth_key"],
+            "auth_key": info["auth_key"],  # 固定された認証コード
             "update": info["update"]
         })
     
@@ -173,14 +178,15 @@ def show_title_list():
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]：タイトルと削除ボタンを同一行に配置（スマホ対応）
+        # カラム比率 [8,2]：タイトルと削除ボタンを同一行に配置
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
+            auth_code = item["auth_key"]
             update_time = item["update"]
             cols = st.columns([8,2])
-            # 認証コードは表示しない（生徒側）
-            label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
+            # 投稿者名と認証コードは固定された値を表示（返信によって変更されない）
+            label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_code})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
                 st.rerun()
@@ -406,8 +412,6 @@ def show_chat_thread():
     
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
-        st.session_state.is_authenticated = False
-        # 投稿者名は維持するためリセットしない
         st.rerun()
 
 #####################################
@@ -462,7 +466,7 @@ def create_new_question():
         st.rerun()
 
 #####################################
-# メイン表示の切り替え
+# メイン表示の切り替え（教師用）
 #####################################
 if st.session_state.selected_title is None:
     show_title_list()
