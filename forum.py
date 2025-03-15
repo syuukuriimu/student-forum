@@ -48,23 +48,21 @@ def fetch_questions_by_title(title):
 # ===============================
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
-if "pending_delete_msg_id" not in st.session_state:
-    st.session_state.pending_delete_msg_id = None
+if "pending_auth_title" not in st.session_state:
+    st.session_state.pending_auth_title = None
 if "pending_delete_title" not in st.session_state:
     st.session_state.pending_delete_title = None
 if "deleted_titles_student" not in st.session_state:
     st.session_state.deleted_titles_student = []
-if "pending_auth_title" not in st.session_state:
-    st.session_state.pending_auth_title = None
 if "is_authenticated" not in st.session_state:
     st.session_state.is_authenticated = False
 if "poster" not in st.session_state:
     st.session_state.poster = None
 
-##############################
+#####################################
 # 新規質問投稿フォーム（生徒側）
-# 初めは閉じた状態（expander を collapsed に）
-##############################
+# 初めは閉じた状態で表示（expander collapsed）
+#####################################
 def show_new_question_form():
     with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
         st.subheader("新規質問を投稿")
@@ -87,8 +85,8 @@ def show_new_question_form():
                 except Exception:
                     pass
             else:
-                if not poster_name:
-                    poster_name = "匿名"
+                # poster_nameがNoneや空の場合は"匿名"を設定
+                poster_name = poster_name or "匿名"
                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                 img_data = new_image.read() if new_image else None
                 db.collection("questions").add({
@@ -111,9 +109,9 @@ def show_new_question_form():
                     pass
                 st.rerun()
 
-##############################
+#####################################
 # 質問一覧の表示（生徒側）
-##############################
+#####################################
 def show_title_list():
     st.title("📖 質問フォーラム")
     # 新規投稿フォームをページ上部に表示
@@ -121,7 +119,7 @@ def show_title_list():
     
     st.subheader("質問一覧")
     
-    # 検索：入力文字列をスペースで分割して、タイトルおよび投稿者名にすべての単語が含まれているか
+    # 検索：入力文字列をスペースで分割し、タイトルおよび投稿者名にすべての単語が含まれているか
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     
@@ -141,7 +139,8 @@ def show_title_list():
         if data.get("question", "").startswith("[SYSTEM]"):
             continue
         title = data.get("title")
-        poster = data.get("poster", "匿名")
+        # 投稿者名が None の場合は "匿名" を設定
+        poster = data.get("poster") or "匿名"
         timestamp = data.get("timestamp", "")
         auth_key = data.get("auth_key", "")
         if title in title_info:
@@ -180,7 +179,6 @@ def show_title_list():
             poster = item["poster"]
             update_time = item["update"]
             cols = st.columns([8, 2])
-            # 認証コードは表示しない（生徒側）
             label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
@@ -298,7 +296,7 @@ def show_chat_thread():
         data = doc.to_dict()
         msg_text = data.get("question", "")
         msg_time = data.get("timestamp", "")
-        poster = data.get("poster", "匿名")
+        poster = data.get("poster") or "匿名"
         deleted = data.get("deleted", 0)
         try:
             formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
@@ -349,7 +347,6 @@ def show_chat_thread():
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
                 st.rerun()
-            # ここ、pending_delete_msg_id の参照を get() で行い、キーが存在しない場合は None を返す
             if st.session_state.get("pending_delete_msg_id") == doc.id:
                 st.warning("本当にこの投稿を削除しますか？")
                 confirm_col1, confirm_col2 = st.columns(2)
