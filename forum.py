@@ -105,19 +105,22 @@ def show_title_list():
     
     docs = fetch_all_questions()
     
-    # 生徒側削除のシステムメッセージで登録されたタイトルを除外
+    # 学生側削除のシステムメッセージで登録されたタイトルを除外
     deleted_system_titles = set()
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました"):
             deleted_system_titles.add(data.get("title"))
     
+    # 以下、元の投稿（システムメッセージ以外）からタイトルと投稿者名を取得する
     seen_titles = set()
     distinct_titles = []
-    # タイトルごとの投稿者名を保持する辞書を作成
     title_authors = {}
     for doc in docs:
         data = doc.to_dict()
+        # 元のユーザー投稿のみ対象（システムメッセージは除外）
+        if data.get("question", "").startswith("[SYSTEM]"):
+            continue
         title = data.get("title")
         poster = data.get("poster", "匿名")
         if title in seen_titles:
@@ -126,7 +129,7 @@ def show_title_list():
         if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
             continue
         distinct_titles.append({"title": title, "poster": poster})
-        title_authors[title] = poster  # ここで投稿者名を記録
+        title_authors[title] = poster  # 元の投稿者名を保持
     
     # キーワードフィルタ（大文字小文字区別なし）
     if keyword:
@@ -162,7 +165,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_student.append(title)
                     time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                    # 投稿者名は title_authors 辞書から取得（元の投稿者名を保持）
+                    # ここで、元の投稿者名は title_authors から取得（元の投稿者名が保持される）
                     poster_name = title_authors.get(title, "匿名")
                     db.collection("questions").add({
                         "title": title,
@@ -258,8 +261,6 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-        # 画像がある場合のみ表示
-        # ※ base64 エンコードして表示
         if "image" in data and data["image"]:
             img_data = base64.b64encode(data["image"]).decode("utf-8")
             st.markdown(
@@ -272,7 +273,6 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 削除ボタンは、認証済みかつ生徒の投稿の場合のみ表示
         if st.session_state.is_authenticated and msg_text and not msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
