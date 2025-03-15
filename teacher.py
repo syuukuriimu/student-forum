@@ -15,8 +15,7 @@ if "authenticated" not in st.session_state:
 if not st.session_state.authenticated:
     st.title("教師ログイン")
     password = st.text_input("パスワードを入力", type="password")
-    if st.button("ログイン"):
-        # st.secrets["teacher"]["password"] に教師用パスワードが設定されている前提
+    if st.button("ログイン", key="teacher_login"):
         if password == st.secrets["teacher"]["password"]:
             st.session_state.authenticated = True
             st.rerun()
@@ -64,15 +63,10 @@ def fetch_questions_by_title(title):
 # ===============================
 # ④ Session State の初期化（教師用）
 # ===============================
-if "selected_title" not in st.session_state:
-    st.session_state.selected_title = None
-if "pending_delete_msg_id" not in st.session_state:
-    st.session_state.pending_delete_msg_id = None
-if "pending_delete_title" not in st.session_state:
-    st.session_state.pending_delete_title = None
-if "deleted_titles_teacher" not in st.session_state:
-    st.session_state.deleted_titles_teacher = []  # 教師側で削除したタイトル（永久非表示）
-    
+for key in ["selected_title", "pending_delete_msg_id", "pending_delete_title", "deleted_titles_teacher"]:
+    if key not in st.session_state:
+        st.session_state[key] = None if key=="selected_title" else [] if "deleted_titles" in key else None
+
 # ===============================
 # ⑤ 質問一覧の表示（教師用）
 # ===============================
@@ -85,32 +79,32 @@ def show_title_list():
     
     docs = fetch_all_questions()
     
-    # 教師側は「[SYSTEM]先生は質問フォームを削除しました」のシステムメッセージがあるタイトルは除外
+    # 教師側で削除済みタイトル（「[SYSTEM]先生は質問フォームを削除しました」）は抽出
     teacher_deleted_titles = set()
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました"):
             teacher_deleted_titles.add(data.get("title"))
     
-    # 生徒側の削除メッセージは教師側では無視（表示対象）
+    # 生徒側削除メッセージは教師側では表示対象とする（認証キーも取得するため）
     title_info = {}
-    # 各タイトルの元のユーザー投稿情報（システムメッセージ以外）を取得
     for doc in docs:
         data = doc.to_dict()
-        # システムメッセージ全般は除外
+        # ユーザー投稿（システムメッセージ以外）のみ対象
         if data.get("question", "").startswith("[SYSTEM]"):
             continue
         title = data.get("title")
         poster = data.get("poster", "匿名")
+        auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
-        # すでに登録済みの場合は、最新のタイムスタンプ（文字列比較が有効な形式の場合）
+        # すでに登録済みなら、最新のタイムスタンプを更新
         if title in title_info:
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
         else:
-            title_info[title] = {"poster": poster, "update": timestamp}
+            title_info[title] = {"poster": poster, "auth_key": auth_key, "update": timestamp}
     
-    # 教師側で削除したタイトルは除外
+    # 除外：教師側で削除済みのタイトル
     distinct_titles = []
     for title, info in title_info.items():
         if title in teacher_deleted_titles or title in st.session_state.deleted_titles_teacher:
@@ -118,27 +112,30 @@ def show_title_list():
         distinct_titles.append({
             "title": title,
             "poster": info["poster"],
+            "auth_key": info["auth_key"],
             "update": info["update"]
         })
     
-    # キーワードフィルタ（大文字小文字区別なし）
+    # キーワードフィルタ（大文字小文字無視）
     if keyword:
         distinct_titles = [item for item in distinct_titles if keyword.lower() in item["title"].lower()]
     
-    # ソート：最終更新日時が最新のものを上に表示
+    # ソート：最終更新日時（update）で降順
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]（削除ボタンを右側に表示、スマホ対応）
+        # カラム比率 [8,2]（タイトルと削除ボタンを同一行に）
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
-            update_time = item.get("update", "")
-            cols = st.columns([8, 2])
-            # タイトルボタンに投稿者名と最終更新日時を表示
-            if cols[0].button(f"{title}\n(投稿者: {poster})\n最終更新: {update_time}", key=f"teacher_title_{idx}"):
+            auth_key = item["auth_key"]
+            update_time = item["update"]
+            cols = st.columns([8,2])
+            # タイトルボタンに「(投稿者: ○○, 認証コード: △△, 最終更新: yyyy-mm-dd HH:MM)」を表示
+            label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_key})\n最終更新: {update_time}"
+            if cols[0].button(label, key=f"teacher_title_{idx}"):
                 st.session_state.selected_title = title
                 st.rerun()
             if cols[1].button("🗑", key=f"teacher_del_{idx}"):
@@ -160,7 +157,6 @@ def show_title_list():
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_teacher.append(title)
                     time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                    # 投稿者名は、元の情報から取得
                     poster_name = title_info.get(title, {}).get("poster", "匿名")
                     db.collection("questions").add({
                         "title": title,
@@ -168,10 +164,11 @@ def show_title_list():
                         "timestamp": time_str,
                         "deleted": 0,
                         "image": None,
-                        "poster": poster_name
+                        "poster": poster_name,
+                        "auth_key": stored_auth_key
                     })
                     st.success("タイトルを削除しました。")
-                    # 両側で削除されていた場合（生徒側の削除システムメッセージも存在する場合）は、完全に削除
+                    # 両側で削除されていた場合は完全削除
                     student_msgs = list(
                         db.collection("questions")
                         .where("title", "==", title)
@@ -203,7 +200,7 @@ def show_chat_thread():
     
     docs = fetch_questions_by_title(selected_title)
     
-    # システムメッセージの表示（中央寄せの赤字）
+    # システムメッセージの表示（赤字、中央寄せ）
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -231,9 +228,7 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
-        # 教師側の場合：
-        #  - 教師の投稿は "[先生]" で始まるものは左寄せ、背景白
-        #  - それ以外は生徒の投稿として、実際の投稿者名を表示し、右寄せ・背景色は認証済みなら緑
+        # 教師の投稿は "[先生]" で始まるものは左寄せ、背景白
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
@@ -285,7 +280,7 @@ def show_chat_thread():
                 if confirm_col2.button("キャンセル", key=f"teacher_cancel_delete_{doc.id}"):
                     st.session_state.pending_delete_msg_id = None
                     st.rerun()
-
+    
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
         """
@@ -327,7 +322,6 @@ def show_chat_thread():
         st.rerun()
 
 def create_new_question():
-    # 教師側では新規投稿ボタンは無いため、通常は呼ばれません
     st.title("新規質問を投稿")
     with st.form("teacher_new_question_form", clear_on_submit=False):
         new_title = st.text_input("質問のタイトルを入力", key="teacher_new_title")
@@ -375,9 +369,7 @@ def create_new_question():
         st.session_state.selected_title = None
         st.rerun()
 
-# ===============================
 # メイン表示の切り替え（教師用）
-# ===============================
 if st.session_state.selected_title is None:
     show_title_list()
 else:
