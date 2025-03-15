@@ -351,38 +351,47 @@ def show_chat_thread():
 
 def create_new_question():
     st.title("新規質問を投稿")
-    with st.form("new_question_form", clear_on_submit=True):
+    # clear_on_submit=False に変更して、送信時エラーがあれば入力内容を保持する
+    with st.form("new_question_form", clear_on_submit=False):
         new_title = st.text_input("質問のタイトルを入力", key="new_title")
         new_text = st.text_area("質問内容を入力", key="new_text")
         new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
         poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
         auth_key = st.text_input("認証キーを設定 (必須入力)", type="password", key="new_auth_key")
         submitted = st.form_submit_button("投稿")
-        if submitted:
-            if not new_title or not new_text:
-                st.error("タイトルと質問内容は必須です。")
-            elif auth_key == "":
-                st.error("認証キーは必須入力です。")
-            else:
-                if not poster_name:
-                    poster_name = "匿名"
-                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                img_data = new_image.read() if new_image else None
-                db.collection("questions").add({
-                    "title": new_title,
-                    "question": new_text,
-                    "image": img_data,
-                    "timestamp": time_str,
-                    "deleted": 0,
-                    "poster": poster_name,
-                    "auth_key": auth_key
-                })
-                st.cache_resource.clear()
-                st.success("質問を投稿しました！")
-                st.session_state.selected_title = new_title
-                st.session_state.is_authenticated = True
-                st.session_state.poster = poster_name
-                st.rerun()
+    if submitted:
+        if not new_title or not new_text:
+            st.error("タイトルと質問内容は必須です。")
+        elif auth_key == "":
+            st.error("認証キーは必須入力です。")
+            # ここで認証キー部分のみクリアする
+            st.session_state.new_auth_key = ""
+        else:
+            if not poster_name:
+                poster_name = "匿名"
+            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+            img_data = new_image.read() if new_image else None
+            db.collection("questions").add({
+                "title": new_title,
+                "question": new_text,
+                "image": img_data,
+                "timestamp": time_str,
+                "deleted": 0,
+                "poster": poster_name,
+                "auth_key": auth_key
+            })
+            st.cache_resource.clear()
+            st.success("質問を投稿しました！")
+            st.session_state.selected_title = new_title
+            st.session_state.is_authenticated = True
+            st.session_state.poster = poster_name
+            # 入力値のクリア（認証キーはもちろん、必要に応じて他もクリア）
+            st.session_state.new_title = ""
+            st.session_state.new_text = ""
+            st.session_state.new_image = None
+            st.session_state.poster_name = ""
+            st.session_state.new_auth_key = ""
+            st.rerun()
     
     if st.button("戻る", key="new_back"):
         st.session_state.selected_title = None
