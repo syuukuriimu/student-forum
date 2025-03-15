@@ -292,8 +292,20 @@ def show_title_list():
 def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
-    
+
     docs = fetch_questions_by_title(selected_title)
+    
+    if not docs:
+        st.write("該当する質問が見つかりません。")
+        return
+
+    # 【修正】元の質問の投稿者を取得
+    first_question_poster = "匿名"
+    for doc in docs:
+        data = doc.to_dict()
+        if data.get("poster"):  # 最初の投稿者を取得
+            first_question_poster = data["poster"]
+            break  # 最初の投稿者が見つかればOK
     
     # システムメッセージの表示（赤字・中央寄せ）
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
@@ -301,12 +313,8 @@ def show_chat_thread():
         for sys_msg in sys_msgs:
             text = sys_msg.get("question", "")[8:]
             st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
-    
+
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
-    
-    if not records:
-        st.write("該当する質問が見つかりません。")
-        return
     
     for doc in records:
         data = doc.to_dict()
@@ -314,6 +322,7 @@ def show_chat_thread():
         msg_time = data.get("timestamp", "")
         poster = data.get("poster") or "匿名"
         deleted = data.get("deleted", 0)
+
         try:
             formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
         except Exception:
@@ -323,17 +332,17 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
-        # 修正：生徒側では、教師の投稿は左寄せ・背景白、生徒の投稿は右寄せ・背景緑
+        # 先生の投稿と生徒の投稿のデザイン分け
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
-            align = "left"
-            bg_color = "#FFFFFF"
+            align = "right"
+            bg_color = "#DCF8C6"
         else:
             sender = poster
             msg_display = msg_text
-            align = "right"
-            bg_color = "#DCF8C6"
+            align = "left"
+            bg_color = "#FFFFFF"
         
         st.markdown(
             f"""
@@ -359,23 +368,6 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        if st.session_state.is_authenticated and msg_text and not msg_text.startswith("[先生]"):
-            if st.button("🗑", key=f"del_{doc.id}"):
-                st.session_state.pending_delete_msg_id = doc.id
-                st.rerun()
-            if st.session_state.get("pending_delete_msg_id") == doc.id:
-                st.warning("本当にこの投稿を削除しますか？")
-                confirm_col1, confirm_col2 = st.columns(2)
-                if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
-                    d_ref = db.collection("questions").document(doc.id)
-                    d_ref.update({"deleted": 1})
-                    st.session_state.pending_delete_msg_id = None
-                    st.cache_resource.clear()
-                    st.rerun()
-                if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
-                    st.session_state.pending_delete_msg_id = None
-                    st.rerun()
-
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
         """
@@ -389,91 +381,40 @@ def show_chat_thread():
         unsafe_allow_html=True
     )
     st.write("---")
-    if st.button("更新", key="chat_update"):
+    
+    if st.button("更新", key="teacher_chat_update"):
         st.cache_resource.clear()
         st.rerun()
     
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
-            with st.form("reply_form_student", clear_on_submit=True):
-                reply_text = st.text_area("メッセージを入力", key="reply_text")
-                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
+            with st.form("teacher_reply_form", clear_on_submit=True):
+                reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
+                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
                 submitted = st.form_submit_button("送信")
+                
                 if submitted:
-                    if reply_text == "":
-                        st.error("メッセージを入力してください。")
-                    else:
-                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                        img_data = reply_image.read() if reply_image else None
-                        db.collection("questions").add({
-                            "title": selected_title,
-                            "question": reply_text,
-                            "image": img_data,
-                            "timestamp": time_str,
-                            "deleted": 0,
-                            "poster": st.session_state.poster
-                        })
-                        st.cache_resource.clear()
-                        st.success("返信を送信しました！")
-                        st.rerun()
-    else:
-        st.info("認証されていないため、返信はできません。")
+                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                    img_data = reply_image.read() if reply_image else None
+
+                    # 【修正】質問スレッドの投稿者を `poster` に設定
+                    db.collection("questions").add({
+                        "title": selected_title,
+                        "question": "[先生] " + reply_text,
+                        "poster": first_question_poster,  # ← ここを修正！
+                        "image": img_data,
+                        "timestamp": time_str,
+                        "deleted": 0
+                    })
+
+                    st.cache_resource.clear()
+                    st.success("返信を送信しました！")
+                    st.rerun()
     
-    if st.button("戻る", key="chat_back"):
+    if st.button("戻る", key="teacher_chat_back"):
         st.session_state.selected_title = None
         st.rerun()
-
-#####################################
-# 新規質問投稿（生徒側）の再投稿用（戻るボタン用）
-#####################################
-def create_new_question():
-    st.title("新規質問を投稿")
-    with st.form("new_question_form", clear_on_submit=False):
-        new_title = st.text_input("質問のタイトルを入力", key="new_title")
-        new_text = st.text_area("質問内容を入力", key="new_text")
-        new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
-        poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-        auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
-        st.caption("認証キーは返信やタイトル削除等に必要です。")
-        submitted = st.form_submit_button("投稿")
-    if submitted:
-        if not new_title or not new_text:
-            st.error("タイトルと質問内容は必須です。")
-        elif auth_key == "":
-            st.error("認証キーは必須入力です。")
-            try:
-                st.session_state["new_auth_key"] = ""
-            except Exception:
-                pass
-        else:
-            if not poster_name:
-                poster_name = "匿名"
-            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-            img_data = new_image.read() if new_image else None
-            db.collection("questions").add({
-                "title": new_title,
-                "question": new_text,
-                "image": img_data,
-                "timestamp": time_str,
-                "deleted": 0,
-                "poster": poster_name,
-                "auth_key": auth_key
-            })
-            st.cache_resource.clear()
-            st.success("質問を投稿しました！")
-            st.session_state.selected_title = new_title
-            st.session_state.is_authenticated = True
-            st.session_state.poster = poster_name
-            try:
-                st.session_state["new_auth_key"] = ""
-            except Exception:
-                pass
-            st.rerun()
-    
-    if st.button("戻る", key="new_back"):
-        st.session_state.selected_title = None
-        st.rerun()
-
+        
 #####################################
 # メイン表示の切り替え（生徒側）
 #####################################
