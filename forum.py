@@ -406,22 +406,19 @@ def show_chat_thread():
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
                 submitted = st.form_submit_button("送信")
                 if submitted:
-                    if reply_text == "":
-                        st.error("メッセージを入力してください。")
-                    else:
-                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                        img_data = reply_image.read() if reply_image else None
-                        db.collection("questions").add({
-                            "title": selected_title,
-                            "question": reply_text,
-                            "image": img_data,
-                            "timestamp": time_str,
-                            "deleted": 0,
-                            "poster": first_question_poster  # 🔹修正箇所：最初の質問者の名前を使用
-                        })
-                        st.cache_resource.clear()
-                        st.success("返信を送信しました！")
-                        st.rerun()
+                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                    img_data = reply_image.read() if reply_image else None
+                    db.collection("questions").add({
+                        "title": selected_title,
+                        "question": reply_text,
+                        "image": img_data,
+                        "timestamp": time_str,
+                        "deleted": 0,
+                        "poster": first_question_poster  # 🔹修正箇所：最初の質問者の名前を使用
+                    })
+                    st.cache_resource.clear()
+                    st.success("返信を送信しました！")
+                    st.rerun()
     else:
         st.info("認証されていないため、返信はできません。")
     
