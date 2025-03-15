@@ -76,11 +76,11 @@ def show_new_question_form():
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
         if submitted:
-            # 重複チェック：生徒側で削除されたタイトルは除外する
+            # 重複チェック：生徒側で削除されたものは除外する（"deleted_by_student" フラグが True のものは除外）
             existing_titles = {
                 doc.to_dict().get("title")
                 for doc in fetch_all_questions()
-                if not doc.to_dict().get("question", "").strip().startswith("[SYSTEM]生徒はこの質問フォームを削除しました")
+                if not doc.to_dict().get("deleted_by_student", False)
             }
             if new_title in existing_titles:
                 st.error("このタイトルはすでに存在します。")
@@ -103,7 +103,8 @@ def show_new_question_form():
                     "timestamp": time_str,
                     "deleted": 0,
                     "poster": poster_name,
-                    "auth_key": auth_key
+                    "auth_key": auth_key,
+                    "deleted_by_student": False  # 新規投稿なので False
                 })
                 st.cache_resource.clear()
                 st.success("質問を投稿しました！")
@@ -126,28 +127,31 @@ def show_title_list():
     
     st.subheader("質問一覧")
     
-    # 検索：入力文字列をスペースで分割し、タイトルおよび投稿者名に全ての単語が含まれているか
+    # 検索：入力文字列をスペースで分割して、タイトルおよび投稿者名に全ての単語が含まれているか
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     
     docs = fetch_all_questions()
     
-    # 生徒側削除システムメッセージのあるタイトルを除外
-    deleted_system_titles = {doc.to_dict().get("title") for doc in docs 
-                             if doc.to_dict().get("question", "").strip().startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
+    # 生徒側削除システムメッセージのタイトル（システムメッセージではなく、"deleted_by_student" フラグを参照）
+    # ※ ここでは、すでに生徒側で削除されたタイトルを除外する
+    # 削除済みのタイトルは、fetch_all_questions() 内で deleted_by_student が True のものとして扱われる
+    # そのため、distinct_titles は "deleted_by_student" が False のもののみとする
     
-    # オリジナルの投稿情報（システムメッセージおよび教師の返信は除外）
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
+        # システムメッセージや教師の返信は除外
         if data.get("question", "").startswith("[SYSTEM]") or data.get("question", "").startswith("[先生]"):
             continue
         title = data.get("title")
         poster = data.get("poster") or "匿名"
         auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
+        # 除外条件: deleted_by_student が True ならスキップ
+        if data.get("deleted_by_student", False):
+            continue
         if title in title_info:
-            # 固定情報は最初の投稿（orig_timestamp）を保持し、更新日時のみ最新に更新
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
         else:
@@ -155,23 +159,21 @@ def show_title_list():
     
     distinct_titles = []
     for title, info in title_info.items():
-        if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
-            continue
         distinct_titles.append({
             "title": title,
-            "poster": info["poster"],       # 固定された投稿者名
-            "auth_key": info["auth_key"],     # 固定された認証コード
+            "poster": info["poster"],
+            "auth_key": info["auth_key"],
             "update": info["update"]
         })
     
-    # 検索フィルタ：タイトルまたは投稿者名に全キーワードが含まれているか
+    # 検索フィルタ：タイトル or 投稿者名に全キーワードが含まれているか
     if keywords:
         def match(item):
             text = (item["title"] + " " + item["poster"]).lower()
             return all(kw in text for kw in keywords)
         distinct_titles = [item for item in distinct_titles if match(item)]
     
-    # ソート：更新日時の降順（返信日時のみ変動）
+    # ソート：更新日時の降順
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
@@ -183,8 +185,8 @@ def show_title_list():
             poster = item["poster"]
             auth_code = item["auth_key"]
             update_time = item["update"]
-            cols = st.columns([8, 2])
-            # 生徒側では認証コードは表示しない（または任意で表示）
+            cols = st.columns([8,2])
+            # 生徒側では認証コードは表示しない
             label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
@@ -227,7 +229,7 @@ def show_title_list():
             st.rerun()
         st.markdown("---")
     
-    # タイトル削除確認（認証キー確認付き）
+    # タイトル削除確認（認証キー確認付き） – 生徒側
     if st.session_state.pending_delete_title:
         title = st.session_state.pending_delete_title
         st.warning("このタイトルを削除するには認証キーを入力してください。")
@@ -241,29 +243,10 @@ def show_title_list():
                 if delete_auth_key == stored_auth_key:
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_student.append(title)
-                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                    poster_name = title_info.get(title, {}).get("poster", "匿名")
-                    db.collection("questions").add({
-                        "title": title,
-                        "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
-                        "timestamp": time_str,
-                        "deleted": 0,
-                        "image": None,
-                        "poster": poster_name,
-                        "auth_key": title_info.get(title, {}).get("auth_key", "")
-                    })
-                    st.success("タイトルを削除しました。")
-                    # 両側で削除された場合は完全にDBから削除
-                    teacher_msgs = list(
-                        db.collection("questions")
-                        .where("title", "==", title)
-                        .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
-                        .stream()
-                    )
-                    if teacher_msgs:
-                        docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
-                        for d in docs_to_delete:
-                            d.reference.delete()
+                    # 更新処理：既存のドキュメントを更新して deleted_by_student を True にする
+                    docs = fetch_questions_by_title(title)
+                    for d in docs:
+                        d.reference.update({"deleted_by_student": True})
                     st.cache_resource.clear()
                     st.rerun()
                 else:
