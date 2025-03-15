@@ -309,18 +309,23 @@ def show_chat_thread():
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
                 submitted = st.form_submit_button("送信")
                 if submitted:
-                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                    img_data = reply_image.read() if reply_image else None
-                    db.collection("questions").add({
-                        "title": selected_title,
-                        "question": "[先生] " + reply_text,
-                        "image": img_data,
-                        "timestamp": time_str,
-                        "deleted": 0
-                    })
-                    st.cache_resource.clear()
-                    st.success("返信を送信しました！")
-                    st.rerun()
+                    if not reply_text.strip() and not reply_image:  # メッセージが空 + 画像なし
+                        st.error("少なくともメッセージか画像を投稿してください。")
+                    else:
+                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                        img_data = reply_image.read() if reply_image else None
+
+                        db.collection("questions").add({
+                            "title": selected_title,
+                            "question": "[先生] "+ reply_text.strip(),  # 空白だけのメッセージを防ぐ
+                            "image": img_data,
+                            "timestamp": time_str,
+                            "deleted": 0,   
+                        })
+                        st.cache_resource.clear()
+                        st.success("返信を送信しました！")
+                        st.rerun()
+            
     if st.button("戻る", key="teacher_chat_back"):
         st.session_state.selected_title = None
         st.rerun()
