@@ -132,32 +132,28 @@ def show_title_list():
     deleted_system_titles = {doc.to_dict().get("title") for doc in docs 
                              if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
     
-   # ユーザー投稿情報（システムメッセージ・先生の返信を除外）
+    # ユーザー投稿情報（システムメッセージのみ除外）
+    # ※修正：[先生] で始まる投稿も含め、すべての投稿を対象とする
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
-        if data.get("question", "").startswith("[SYSTEM]") or data.get("question", "").startswith("[先生]"):
+        if data.get("question", "").startswith("[SYSTEM]"):
             continue
-
         title = data.get("title")
         poster = data.get("poster") or "匿名"  # 投稿者名が空なら匿名
         auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
-
         if title in title_info:
-            # 🔽 【修正】投稿者名と認証コードを最初の投稿から固定
             if timestamp < title_info[title]["orig_timestamp"]:
                 title_info[title]["orig_timestamp"] = timestamp
-                title_info[title]["poster"] = poster  # ← 最初の投稿者名を保持
-                title_info[title]["auth_key"] = auth_key  # ← 認証コードも保持
-            # 更新日時のみ最新にする
+                title_info[title]["poster"] = poster
+                title_info[title]["auth_key"] = auth_key
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
         else:
-            # 🔽 【修正】新しいタイトルが出たときに、投稿者名をしっかり記録
             title_info[title] = {
-                "poster": poster,  # ← 最初の投稿者名を保持
-                "auth_key": auth_key,  # ← 認証コードを保持
+                "poster": poster,
+                "auth_key": auth_key,
                 "orig_timestamp": timestamp,
                 "update": timestamp
             }
@@ -168,8 +164,8 @@ def show_title_list():
             continue
         distinct_titles.append({
             "title": title,
-            "poster": info["poster"],       # 🔽 【修正】常に最初の投稿者名を使用
-            "auth_key": info["auth_key"],    # 🔽 【修正】常に最初の認証コードを使用
+            "poster": info["poster"],
+            "auth_key": info["auth_key"],
             "update": info["update"]
         })
 
@@ -194,7 +190,6 @@ def show_title_list():
             auth_code = item["auth_key"]
             update_time = item["update"]
             cols = st.columns([8,2])
-            # 生徒側では認証コードは表示しない
             label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
@@ -406,7 +401,7 @@ def show_chat_thread():
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
                 submitted = st.form_submit_button("送信")
                 if submitted:
-                    if not reply_text.strip() and not reply_image:  # メッセージが空 + 画像なし
+                    if not reply_text.strip() and not reply_image:
                         st.error("少なくともメッセージか画像を投稿してください。")
                     else:
                         time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
@@ -414,7 +409,7 @@ def show_chat_thread():
 
                         db.collection("questions").add({
                             "title": selected_title,
-                            "question": reply_text.strip(),  # 空白だけのメッセージを防ぐ
+                            "question": reply_text.strip(),
                             "image": img_data,
                             "timestamp": time_str,
                             "deleted": 0,
