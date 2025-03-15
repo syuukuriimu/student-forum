@@ -61,7 +61,7 @@ if "poster" not in st.session_state:
 
 #####################################
 # 新規質問投稿フォーム（生徒側）
-# 初めは閉じた状態で表示（expander collapsed）
+# 初めは閉じた状態（expander collapsed）
 #####################################
 def show_new_question_form():
     with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
@@ -85,7 +85,7 @@ def show_new_question_form():
                 except Exception:
                     pass
             else:
-                # poster_nameがNoneや空の場合は"匿名"を設定
+                # poster_name が空の場合は "匿名" を設定
                 poster_name = poster_name or "匿名"
                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                 img_data = new_image.read() if new_image else None
@@ -119,7 +119,7 @@ def show_title_list():
     
     st.subheader("質問一覧")
     
-    # 検索：入力文字列をスペースで分割し、タイトルおよび投稿者名にすべての単語が含まれているか
+    # 検索：入力文字列をスペースで分割して、タイトルおよび投稿者名にすべての単語が含まれているか
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     
@@ -139,7 +139,7 @@ def show_title_list():
         if data.get("question", "").startswith("[SYSTEM]"):
             continue
         title = data.get("title")
-        # 投稿者名が None の場合は "匿名" を設定
+        # 投稿者名が None なら "匿名" を設定
         poster = data.get("poster") or "匿名"
         timestamp = data.get("timestamp", "")
         auth_key = data.get("auth_key", "")
@@ -178,7 +178,7 @@ def show_title_list():
             title = item["title"]
             poster = item["poster"]
             update_time = item["update"]
-            cols = st.columns([8, 2])
+            cols = st.columns([8,2])
             label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"title_button_{idx}"):
                 st.session_state.pending_auth_title = title
@@ -406,7 +406,7 @@ def show_chat_thread():
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.session_state.is_authenticated = False
-        st.session_state.poster = None
+        # ※ ここでは st.session_state.poster をリセットしないように修正
         st.rerun()
 
 #####################################
