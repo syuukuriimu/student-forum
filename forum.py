@@ -1,7 +1,7 @@
 import streamlit as st
 import base64
 from datetime import datetime
-from zoneinfo import ZoneInfo  # タイムゾーン設定用
+from zoneinfo import ZoneInfo # タイムゾーン設定用
 import firebase_admin
 from firebase_admin import credentials, firestore
 import ast
@@ -48,21 +48,23 @@ def fetch_questions_by_title(title):
 # ===============================
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
-if "pending_auth_title" not in st.session_state:
-    st.session_state.pending_auth_title = None
+if "pending_delete_msg_id" not in st.session_state:
+    st.session_state.pending_delete_msg_id = None
 if "pending_delete_title" not in st.session_state:
     st.session_state.pending_delete_title = None
 if "deleted_titles_student" not in st.session_state:
     st.session_state.deleted_titles_student = []
+if "pending_auth_title" not in st.session_state:
+    st.session_state.pending_auth_title = None
 if "is_authenticated" not in st.session_state:
     st.session_state.is_authenticated = False
 if "poster" not in st.session_state:
     st.session_state.poster = None
 
-#####################################
+##############################
 # 新規質問投稿フォーム（生徒側）
-# 初めは閉じた状態で表示（expander collapsed）
-#####################################
+# 初めは閉じた状態（expander を collapsed に）
+##############################
 def show_new_question_form():
     with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
         st.subheader("新規質問を投稿")
@@ -71,7 +73,7 @@ def show_new_question_form():
             new_text = st.text_area("質問内容を入力", key="new_text")
             new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
             poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-            # 認証キーは必須、10文字までに制限（生徒側では認証コードは表示しない）
+            # 認証キーは必須、10文字までに制限、説明文追加
             auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
@@ -109,23 +111,23 @@ def show_new_question_form():
                     pass
                 st.rerun()
 
-#####################################
+##############################
 # 質問一覧の表示（生徒側）
-#####################################
+##############################
 def show_title_list():
     st.title("📖 質問フォーラム")
-    # ページ上部に新規質問投稿フォームを表示
+    # 新規投稿フォームをページ上部に表示
     show_new_question_form()
     
     st.subheader("質問一覧")
     
-    # 検索：入力文字列をスペースで分割し、タイトルおよび投稿者名にすべての単語が含まれているか
+    # 検索：入力文字列をスペースで分割して、タイトルおよび投稿者名にすべての単語が含まれているか
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     
     docs = fetch_all_questions()
     
-    # 生徒側削除システムメッセージ（"[SYSTEM]生徒はこの質問フォームを削除しました"）のタイトルは除外
+    # 生徒側削除システムメッセージ（"[SYSTEM]生徒はこの質問フォームを削除しました"）のタイトルを除外
     deleted_system_titles = set()
     for doc in docs:
         data = doc.to_dict()
@@ -142,7 +144,6 @@ def show_title_list():
         poster = data.get("poster", "匿名")
         timestamp = data.get("timestamp", "")
         auth_key = data.get("auth_key", "")
-        # 最新の更新日時を保持
         if title in title_info:
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
@@ -160,14 +161,14 @@ def show_title_list():
             "update": info["update"]
         })
     
-    # 検索フィルタ：タイトルまたは投稿者名にすべてのキーワードが含まれる場合に残す
+    # 検索フィルタ：タイトル or 投稿者名にすべてのキーワードが含まれているか
     if keywords:
         def match(item):
             text = (item["title"] + " " + item["poster"]).lower()
             return all(kw in text for kw in keywords)
         distinct_titles = [item for item in distinct_titles if match(item)]
     
-    # ソート：最終更新日時の降順（最新のものが上）
+    # ソート：最終更新日時の降順
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
@@ -280,7 +281,7 @@ def show_chat_thread():
     
     docs = fetch_questions_by_title(selected_title)
     
-    # システムメッセージ（赤字・中央寄せ）の表示
+    # システムメッセージの表示（赤字・中央寄せ）
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -308,8 +309,7 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
-        # 生徒側の場合：
-        # 教師の投稿は "[先生]" で始まる場合は左寄せ・背景白、生徒の投稿は右寄せ・背景緑
+        # 修正：生徒側では、教師の投稿は左寄せ・背景白、生徒の投稿は右寄せ・背景緑
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
@@ -349,7 +349,8 @@ def show_chat_thread():
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
                 st.rerun()
-            if st.session_state.pending_delete_msg_id == doc.id:
+            # ここ、pending_delete_msg_id の参照を get() で行い、キーが存在しない場合は None を返す
+            if st.session_state.get("pending_delete_msg_id") == doc.id:
                 st.warning("本当にこの投稿を削除しますか？")
                 confirm_col1, confirm_col2 = st.columns(2)
                 if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
@@ -412,7 +413,7 @@ def show_chat_thread():
         st.rerun()
 
 #####################################
-# 新規質問投稿（生徒側）再投稿用（戻るボタン用）
+# 新規質問投稿（生徒側）の再投稿用（戻るボタン用）
 #####################################
 def create_new_question():
     st.title("新規質問を投稿")
