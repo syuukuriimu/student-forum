@@ -72,33 +72,40 @@ def show_title_list():
     st.title("📖 質問フォーラム（教師用）")
     st.subheader("質問一覧")
     
-    # キーワード検索（投稿タイトルおよび投稿者名を対象、スペース区切り検索）
+    # キーワード検索（タイトル・投稿者名対象、スペース区切り）
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     
     docs = fetch_all_questions()
     
     # 教師側削除システムメッセージのあるタイトルを抽出
-    teacher_deleted_titles = { doc.to_dict().get("title") 
-                              for doc in docs 
+    teacher_deleted_titles = { doc.to_dict().get("title")
+                              for doc in docs
                               if doc.to_dict().get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました") }
     
-    # ユーザー投稿情報（システムメッセージ以外）の抽出
+    # 新規質問投稿時のオリジナル情報を保持するため、各タイトルについて
+    # 最も古い (最小) timestamp をオリジナル情報、最新のtimestampを更新日時(update)として保持
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
+        # システムメッセージは除外
         if data.get("question", "").startswith("[SYSTEM]"):
             continue
         title = data.get("title")
-        poster = data.get("poster", "匿名")
+        poster = data.get("poster") or "匿名"
         auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
-        # 最新の更新日時を保持
         if title in title_info:
+            # オリジナル情報は、最小のtimestamp
+            if timestamp < title_info[title]["orig_timestamp"]:
+                title_info[title]["orig_timestamp"] = timestamp
+                title_info[title]["poster"] = poster
+                title_info[title]["auth_key"] = auth_key
+            # 更新日時は最大のtimestamp
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
         else:
-            title_info[title] = {"poster": poster, "auth_key": auth_key, "update": timestamp}
+            title_info[title] = {"poster": poster, "auth_key": auth_key, "orig_timestamp": timestamp, "update": timestamp}
     
     distinct_titles = []
     for title, info in title_info.items():
@@ -111,28 +118,27 @@ def show_title_list():
             "update": info["update"]
         })
     
-    # 検索フィルタ（タイトルまたは投稿者名に全キーワードが含まれているか）
+    # 検索フィルタ：タイトルまたは投稿者名に全キーワードが含まれるか
     if keywords:
         def match(item):
             text = (item["title"] + " " + item["poster"]).lower()
             return all(kw in text for kw in keywords)
         distinct_titles = [item for item in distinct_titles if match(item)]
     
-    # ソート：最終更新日時の降順
+    # ソート：更新日時降順
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]：タイトルと削除ボタンを同一行に配置
+        # カラム比率 [8,2]：タイトル（認証コードも確実に表示）と削除ボタン
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
-            auth_key = item["auth_key"]
+            auth_code = item["auth_key"]
             update_time = item["update"]
             cols = st.columns([8, 2])
-            # 認証コードを確実に表示
-            label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_key})\n最終更新: {update_time}"
+            label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_code})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"teacher_title_{idx}"):
                 st.session_state.selected_title = title
                 st.rerun()
@@ -140,18 +146,18 @@ def show_title_list():
                 st.session_state.pending_delete_title = title
                 st.rerun()
     
-    # タイトル削除確認（認証キー確認は不要。確認のみ）
+    # タイトル削除確認（認証キー確認は不要、単純確認のみ）
     if st.session_state.pending_delete_title:
         title = st.session_state.pending_delete_title
         st.warning(f"本当に「{title}」を削除してよろしいですか？")
         cols = st.columns(2)
         if cols[0].button("はい", key="teacher_del_confirm"):
-            # ここで、該当タイトルの投稿情報から認証コードや投稿者情報を取得
+            # オリジナルの投稿者と認証コードをそのまま保持
             docs = fetch_questions_by_title(title)
             if docs:
                 data0 = docs[0].to_dict()
                 stored_auth_key = data0.get("auth_key", "")
-                poster_name = data0.get("poster", "匿名")
+                poster_name = data0.get("poster") or "匿名"
             else:
                 stored_auth_key = ""
                 poster_name = "匿名"
@@ -168,7 +174,7 @@ def show_title_list():
                 "auth_key": stored_auth_key
             })
             st.success("タイトルを削除しました。")
-            # 両側で削除された場合は完全にDBから削除
+            # 両側で削除されていた場合は完全削除
             student_msgs = list(
                 db.collection("questions")
                 .where("title", "==", title)
