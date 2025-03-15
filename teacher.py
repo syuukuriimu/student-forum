@@ -1,7 +1,7 @@
 import streamlit as st
 import base64
 from datetime import datetime
-from zoneinfo import ZoneInfo  # タイムゾーン設定用
+from zoneinfo import ZoneInfo
 import firebase_admin
 from firebase_admin import credentials, firestore
 import ast
@@ -9,18 +9,14 @@ import ast
 # ===============================
 # セッションステートの初期化（教師用）
 # ===============================
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-if "is_authenticated" not in st.session_state:
-    st.session_state.is_authenticated = False
-if "selected_title" not in st.session_state:
-    st.session_state.selected_title = None
-if "pending_delete_msg_id" not in st.session_state:
-    st.session_state.pending_delete_msg_id = None
-if "pending_delete_title" not in st.session_state:
-    st.session_state.pending_delete_title = None
-if "deleted_titles_teacher" not in st.session_state:
-    st.session_state.deleted_titles_teacher = []
+for key in ["authenticated", "is_authenticated", "selected_title", "pending_delete_msg_id", "pending_delete_title", "deleted_titles_teacher"]:
+    if key not in st.session_state:
+        if key in ["authenticated", "is_authenticated"]:
+            st.session_state[key] = False
+        elif key == "selected_title":
+            st.session_state[key] = None
+        else:
+            st.session_state[key] = [] if "deleted_titles" in key else None
 
 # ===============================
 # ① 教師専用ログイン（認証機能）
@@ -51,7 +47,6 @@ if not firebase_admin._apps:
     except KeyError:
         cred = credentials.Certificate("serviceAccountKey.json")
     firebase_admin.initialize_app(cred)
-
 db = firestore.client()
 
 # ===============================
@@ -59,20 +54,16 @@ db = firestore.client()
 # ===============================
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
-    return list(
-        db.collection("questions")
-        .order_by("timestamp", direction=firestore.Query.DESCENDING)
-        .stream()
-    )
+    return list(db.collection("questions")
+                .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                .stream())
 
 @st.cache_resource(ttl=10)
 def fetch_questions_by_title(title):
-    return list(
-        db.collection("questions")
-        .where("title", "==", title)
-        .order_by("timestamp")
-        .stream()
-    )
+    return list(db.collection("questions")
+                .where("title", "==", title)
+                .order_by("timestamp")
+                .stream())
 
 # ===============================
 # ⑤ 質問一覧の表示（教師用）
@@ -81,19 +72,21 @@ def show_title_list():
     st.title("📖 質問フォーラム（教師用）")
     st.subheader("質問一覧")
     
-    # キーワード検索
-    keyword = st.text_input("キーワード検索", key="teacher_title_keyword")
-    
+    # キーワード検索（投稿タイトルおよび投稿者名を対象、スペース区切り検索に対応）
+    keyword_input = st.text_input("キーワード検索")
+    # キーワードをスペースで分割してリスト化
+    keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
+
     docs = fetch_all_questions()
     
-    # 教師側削除システムメッセージがあるタイトルを抽出
+    # 教師側削除システムメッセージを抽出
     teacher_deleted_titles = set()
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました"):
             teacher_deleted_titles.add(data.get("title"))
     
-    # ユーザー投稿情報（システムメッセージ以外）を取得
+    # ユーザー投稿情報（システムメッセージ以外）の抽出
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
@@ -103,6 +96,7 @@ def show_title_list():
         poster = data.get("poster", "匿名")
         auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
+        # 最新の更新日時を保持
         if title in title_info:
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
@@ -120,17 +114,20 @@ def show_title_list():
             "update": info["update"]
         })
     
-    # キーワードフィルタ
-    if keyword:
-        distinct_titles = [item for item in distinct_titles if keyword.lower() in item["title"].lower()]
+    # 検索フィルタ（タイトルまたは投稿者名に全てのキーワードが含まれているか）
+    if keywords:
+        def match(item):
+            text = (item["title"] + " " + item["poster"]).lower()
+            return all(kw in text for kw in keywords)
+        distinct_titles = [item for item in distinct_titles if match(item)]
     
-    # ソート：最終更新日時が最新のものを上に表示
+    # ソート：更新日時の降順
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]：タイトルと削除ボタンを右側に配置
+        # カラム比率 [8,2]
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
@@ -171,7 +168,7 @@ def show_title_list():
                         "auth_key": stored_auth_key
                     })
                     st.success("タイトルを削除しました。")
-                    # 両側で削除済みの場合は完全削除
+                    # 両側で削除された場合は完全削除
                     student_msgs = list(
                         db.collection("questions")
                         .where("title", "==", title)
@@ -231,16 +228,17 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
+        # 修正：教師の投稿は右側・緑色、学生の投稿は左側・白色
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
-            align = "left"
-            bg_color = "#FFFFFF"
+            align = "right"
+            bg_color = "#DCF8C6"
         else:
             sender = poster
             msg_display = msg_text
-            align = "right"
-            bg_color = "#DCF8C6" if st.session_state.is_authenticated else "#FFFFFF"
+            align = "left"
+            bg_color = "#FFFFFF"
         
         st.markdown(
             f"""
@@ -371,7 +369,9 @@ def create_new_question():
         st.session_state.selected_title = None
         st.rerun()
 
+# ===============================
 # メイン表示の切り替え（教師用）
+# ===============================
 if st.session_state.selected_title is None:
     show_title_list()
 else:
