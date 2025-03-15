@@ -310,8 +310,7 @@ def show_chat_thread():
                 submitted = st.form_submit_button("送信")
                 if submitted:
                     if not reply_text.strip() and not reply_image:  # メッセージが空 + 画像なし
-                        st.error("少なくともメッセージか画像を投稿してください。")
-                        
+                        st.error("少なくともメッセージか画像を投稿してください。")     
                     else:
                         time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                         img_data = reply_image.read() if reply_image else None
@@ -326,60 +325,8 @@ def show_chat_thread():
                         st.cache_resource.clear()
                         st.success("返信を送信しました！")
                         st.rerun()
-                        
-    # エラーメッセージがある場合、フォームの外で表示
-    if st.session_state.get("error_message"):
-        st.error(st.session_state.error_message)
             
     if st.button("戻る", key="teacher_chat_back"):
-        st.session_state.selected_title = None
-        st.rerun()
-
-def create_new_question():
-    st.title("新規質問を投稿")
-    with st.form("teacher_new_question_form", clear_on_submit=False):
-        new_title = st.text_input("質問のタイトルを入力", key="teacher_new_title")
-        new_text = st.text_area("質問内容を入力", key="teacher_new_text")
-        new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="teacher_new_image")
-        poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="teacher_poster_name")
-        auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="teacher_new_auth_key", max_chars=10)
-        st.caption("認証キーは返信やタイトル削除等に必要です。")
-        submitted = st.form_submit_button("投稿")
-    if submitted:
-        if not new_title or not new_text:
-            st.error("タイトルと質問内容は必須です。")
-        elif auth_key == "":
-            st.error("認証キーは必須入力です。")
-            try:
-                st.session_state["teacher_new_auth_key"] = ""
-            except Exception:
-                pass
-        else:
-            if not poster_name:
-                poster_name = "匿名"
-            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-            img_data = new_image.read() if new_image else None
-            db.collection("questions").add({
-                "title": new_title,
-                "question": new_text,
-                "image": img_data,
-                "timestamp": time_str,
-                "deleted": 0,
-                "poster": poster_name,
-                "auth_key": auth_key
-            })
-            st.cache_resource.clear()
-            st.success("質問を投稿しました！")
-            st.session_state.selected_title = new_title
-            st.session_state.is_authenticated = True
-            st.session_state.poster = poster_name
-            try:
-                st.session_state["teacher_new_auth_key"] = ""
-            except Exception:
-                pass
-            st.rerun()
-    
-    if st.button("戻る", key="teacher_new_back"):
         st.session_state.selected_title = None
         st.rerun()
 
