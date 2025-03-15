@@ -6,6 +6,12 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import ast
 
+# st.cache_resource 対策：存在しなければ st.cache_data を使用
+try:
+    cache_resource = st.cache_resource
+except AttributeError:
+    cache_resource = st.cache_data
+
 # ===============================
 # ① 教師専用ログイン（認証機能）
 # ===============================
@@ -43,7 +49,7 @@ db = firestore.client()
 # ===============================
 # ③ キャッシュを用いた Firestore アクセス（TTL 10秒）
 # ===============================
-@st.cache_resource(ttl=10)
+@cache_resource(ttl=10)
 def fetch_all_questions():
     return list(
         db.collection("questions")
@@ -51,7 +57,7 @@ def fetch_all_questions():
         .stream()
     )
 
-@st.cache_resource(ttl=10)
+@cache_resource(ttl=10)
 def fetch_questions_by_title(title):
     return list(
         db.collection("questions")
@@ -65,7 +71,10 @@ def fetch_questions_by_title(title):
 # ===============================
 for key in ["selected_title", "pending_delete_msg_id", "pending_delete_title", "deleted_titles_teacher"]:
     if key not in st.session_state:
-        st.session_state[key] = None if key=="selected_title" else [] if "deleted_titles" in key else None
+        if key == "deleted_titles_teacher":
+            st.session_state[key] = []
+        else:
+            st.session_state[key] = None
 
 # ===============================
 # ⑤ 質問一覧の表示（教師用）
@@ -79,32 +88,30 @@ def show_title_list():
     
     docs = fetch_all_questions()
     
-    # 教師側で削除済みタイトル（「[SYSTEM]先生は質問フォームを削除しました」）は抽出
+    # 教師側削除システムメッセージがあるタイトルを抽出
     teacher_deleted_titles = set()
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました"):
             teacher_deleted_titles.add(data.get("title"))
     
-    # 生徒側削除メッセージは教師側では表示対象とする（認証キーも取得するため）
+    # 生徒側削除システムメッセージは教師側では表示対象とする
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
-        # ユーザー投稿（システムメッセージ以外）のみ対象
+        # ユーザー投稿のみ対象（システムメッセージは除外）
         if data.get("question", "").startswith("[SYSTEM]"):
             continue
         title = data.get("title")
         poster = data.get("poster", "匿名")
         auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
-        # すでに登録済みなら、最新のタイムスタンプを更新
         if title in title_info:
             if timestamp > title_info[title]["update"]:
                 title_info[title]["update"] = timestamp
         else:
             title_info[title] = {"poster": poster, "auth_key": auth_key, "update": timestamp}
     
-    # 除外：教師側で削除済みのタイトル
     distinct_titles = []
     for title, info in title_info.items():
         if title in teacher_deleted_titles or title in st.session_state.deleted_titles_teacher:
@@ -116,24 +123,23 @@ def show_title_list():
             "update": info["update"]
         })
     
-    # キーワードフィルタ（大文字小文字無視）
+    # キーワードフィルタ
     if keyword:
         distinct_titles = [item for item in distinct_titles if keyword.lower() in item["title"].lower()]
     
-    # ソート：最終更新日時（update）で降順
+    # ソート：最新の更新日時順
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]（タイトルと削除ボタンを同一行に）
+        # カラム比率 [8,2]：タイトルと削除ボタンを同一行に表示（スマホ対応）
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
             poster = item["poster"]
             auth_key = item["auth_key"]
             update_time = item["update"]
             cols = st.columns([8,2])
-            # タイトルボタンに「(投稿者: ○○, 認証コード: △△, 最終更新: yyyy-mm-dd HH:MM)」を表示
             label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_key})\n最終更新: {update_time}"
             if cols[0].button(label, key=f"teacher_title_{idx}"):
                 st.session_state.selected_title = title
@@ -168,7 +174,7 @@ def show_title_list():
                         "auth_key": stored_auth_key
                     })
                     st.success("タイトルを削除しました。")
-                    # 両側で削除されていた場合は完全削除
+                    # 両側で削除済みの場合、完全削除
                     student_msgs = list(
                         db.collection("questions")
                         .where("title", "==", title)
@@ -200,7 +206,7 @@ def show_chat_thread():
     
     docs = fetch_questions_by_title(selected_title)
     
-    # システムメッセージの表示（赤字、中央寄せ）
+    # システムメッセージの表示（赤字・中央寄せ）
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -228,7 +234,6 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
-        # 教師の投稿は "[先生]" で始まるものは左寄せ、背景白
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
@@ -280,7 +285,7 @@ def show_chat_thread():
                 if confirm_col2.button("キャンセル", key=f"teacher_cancel_delete_{doc.id}"):
                     st.session_state.pending_delete_msg_id = None
                     st.rerun()
-    
+
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
         """
@@ -369,7 +374,9 @@ def create_new_question():
         st.session_state.selected_title = None
         st.rerun()
 
+# ===============================
 # メイン表示の切り替え（教師用）
+# ===============================
 if st.session_state.selected_title is None:
     show_title_list()
 else:
