@@ -336,13 +336,14 @@ def show_chat_thread():
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
-            align = "right"
-            bg_color = "#DCF8C6"
+            align = "left"
+            bg_color = "#FFFFFF"
         else:
             sender = poster
             msg_display = msg_text
-            align = "left"
-            bg_color = "#FFFFFF"
+            align = "right"
+            bg_color = "#DCF8C6"
+
         
         st.markdown(
             f"""
