@@ -64,7 +64,7 @@ def show_title_list():
         st.session_state.selected_title = "__new_question__"
         st.rerun()
     
-    # 認証待ちのタイトルがある場合、認証フォームを上部に表示（他のタイトル一覧はその下に表示）
+    # 認証待ちのタイトルがある場合、認証フォームを上部に表示
     if st.session_state.pending_auth_title:
         st.markdown("---")
         st.subheader(f"{st.session_state.pending_auth_title} の認証")
@@ -82,7 +82,6 @@ def show_title_list():
                     if input_auth_key == stored_auth_key:
                         st.session_state.selected_title = st.session_state.pending_auth_title
                         st.session_state.is_authenticated = True
-                        # 認証時、元の投稿の投稿者名をセッションに保存
                         st.session_state.poster = docs[0].to_dict().get("poster", "自分")
                         st.session_state.pending_auth_title = None
                         st.success("認証に成功しました。")
@@ -113,10 +112,10 @@ def show_title_list():
         if data.get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました"):
             deleted_system_titles.add(data.get("title"))
     
-    # 重複除去＆セッション内の削除済みタイトルも除外
     seen_titles = set()
-    # distinct_titles はタイトルとその投稿者名の両方を保持する
     distinct_titles = []
+    # タイトルごとの投稿者名を保持する辞書を作成
+    title_authors = {}
     for doc in docs:
         data = doc.to_dict()
         title = data.get("title")
@@ -127,6 +126,7 @@ def show_title_list():
         if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
             continue
         distinct_titles.append({"title": title, "poster": poster})
+        title_authors[title] = poster  # ここで投稿者名を記録
     
     # キーワードフィルタ（大文字小文字区別なし）
     if keyword:
@@ -141,7 +141,6 @@ def show_title_list():
             cols = st.columns([4, 1])
             # タイトル横に「(投稿者: ○○)」を表示
             if cols[0].button(f"{title} (投稿者: {poster})", key=f"title_button_{idx}"):
-                # タイトルクリック時、認証処理のため pending_auth_title を設定
                 st.session_state.pending_auth_title = title
                 st.rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
@@ -163,12 +162,15 @@ def show_title_list():
                     st.session_state.pending_delete_title = None
                     st.session_state.deleted_titles_student.append(title)
                     time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                    # 投稿者名は title_authors 辞書から取得（元の投稿者名を保持）
+                    poster_name = title_authors.get(title, "匿名")
                     db.collection("questions").add({
                         "title": title,
                         "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
                         "timestamp": time_str,
                         "deleted": 0,
-                        "image": None
+                        "image": None,
+                        "poster": poster_name
                     })
                     st.success("タイトルを削除しました。")
                     teacher_msgs = list(
@@ -188,7 +190,7 @@ def show_title_list():
         if st.button("キャンセル", key="del_confirm_no"):
             st.session_state.pending_delete_title = None
             st.rerun()
-
+    
     if st.button("更新", key="title_update"):
         st.cache_resource.clear()
         st.rerun()
@@ -208,10 +210,7 @@ def show_chat_thread():
     if sys_msgs:
         for sys_msg in sys_msgs:
             text = sys_msg.get("question", "")[8:]
-            st.markdown(
-                f"<h3 style='color: red; text-align: center;'>{text}</h3>",
-                unsafe_allow_html=True
-            )
+            st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
     
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     
@@ -221,10 +220,9 @@ def show_chat_thread():
     
     for doc in records:
         data = doc.to_dict()
-        msg_id = doc.id
         msg_text = data.get("question", "")
-        msg_img = data.get("image")
         msg_time = data.get("timestamp", "")
+        poster = data.get("poster", "匿名")
         deleted = data.get("deleted", 0)
         try:
             formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
@@ -232,28 +230,21 @@ def show_chat_thread():
             formatted_time = msg_time
         
         if deleted:
-            st.markdown(
-                "<div style='color: red;'>【投稿が削除されました】</div>",
-                unsafe_allow_html=True
-            )
+            st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
-        # 教師の投稿は "[先生]" で始まるため、左寄せ、背景白
+        # 生徒側の場合：
+        #  - 教師の投稿は "[先生]" で始まる場合と区別し、実際の投稿者名を表示する
         if msg_text.startswith("[先生]"):
             sender = "先生"
-            is_self = False
             msg_display = msg_text[len("[先生]"):].strip()
             align = "left"
             bg_color = "#FFFFFF"
         else:
-            # 生徒の投稿：常に右寄せとする
-            poster_name = data.get("poster", "匿名")
-            sender = poster_name
-            is_self = True
-            align = "right"
-            # 認証済みなら緑、未認証なら白
-            bg_color = "#DCF8C6" if st.session_state.is_authenticated else "#FFFFFF"
+            sender = poster
             msg_display = msg_text
+            align = "right"
+            bg_color = "#DCF8C6" if st.session_state.is_authenticated else "#FFFFFF"
         
         st.markdown(
             f"""
@@ -267,9 +258,10 @@ def show_chat_thread():
             unsafe_allow_html=True
         )
         
-        # 画像表示（ある場合）
-        if msg_img:
-            img_data = base64.b64encode(msg_img).decode("utf-8")
+        # 画像がある場合のみ表示
+        # ※ base64 エンコードして表示
+        if "image" in data and data["image"]:
+            img_data = base64.b64encode(data["image"]).decode("utf-8")
             st.markdown(
                 f'''
                 <div style="text-align: {align}; margin-bottom: 15px;">
@@ -282,20 +274,19 @@ def show_chat_thread():
         
         # 削除ボタンは、認証済みかつ生徒の投稿の場合のみ表示
         if st.session_state.is_authenticated and msg_text and not msg_text.startswith("[先生]"):
-            if st.button("🗑", key=f"del_{msg_id}"):
-                st.session_state.pending_delete_msg_id = msg_id
+            if st.button("🗑", key=f"del_{doc.id}"):
+                st.session_state.pending_delete_msg_id = doc.id
                 st.rerun()
-            
-            if st.session_state.pending_delete_msg_id == msg_id:
+            if st.session_state.pending_delete_msg_id == doc.id:
                 st.warning("本当にこの投稿を削除しますか？")
                 confirm_col1, confirm_col2 = st.columns(2)
-                if confirm_col1.button("はい", key=f"confirm_delete_{msg_id}"):
-                    doc_ref = db.collection("questions").document(msg_id)
-                    doc_ref.update({"deleted": 1})
+                if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
+                    d_ref = db.collection("questions").document(doc.id)
+                    d_ref.update({"deleted": 1})
                     st.session_state.pending_delete_msg_id = None
                     st.cache_resource.clear()
                     st.rerun()
-                if confirm_col2.button("キャンセル", key=f"cancel_delete_{msg_id}"):
+                if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
                     st.session_state.pending_delete_msg_id = None
                     st.rerun()
 
@@ -316,7 +307,6 @@ def show_chat_thread():
         st.cache_resource.clear()
         st.rerun()
     
-    # 返信フォーム（認証済みの場合のみ表示）
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
             with st.form("reply_form_student", clear_on_submit=True):
@@ -351,7 +341,6 @@ def show_chat_thread():
 
 def create_new_question():
     st.title("新規質問を投稿")
-    # clear_on_submit=False に変更して、送信時エラーがあれば入力内容を保持する
     with st.form("new_question_form", clear_on_submit=False):
         new_title = st.text_input("質問のタイトルを入力", key="new_title")
         new_text = st.text_area("質問内容を入力", key="new_text")
@@ -366,7 +355,7 @@ def create_new_question():
             st.error("認証キーは必須入力です。")
             try:
                 st.session_state["new_auth_key"] = ""
-            except Exception as e:
+            except Exception:
                 pass
         else:
             if not poster_name:
@@ -387,10 +376,9 @@ def create_new_question():
             st.session_state.selected_title = new_title
             st.session_state.is_authenticated = True
             st.session_state.poster = poster_name
-            # 入力値のクリア（認証キーのみクリアする）
             try:
                 st.session_state["new_auth_key"] = ""
-            except Exception as e:
+            except Exception:
                 pass
             st.rerun()
     

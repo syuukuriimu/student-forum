@@ -46,11 +46,20 @@ db = firestore.client()
 # ===============================
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
-    return list(db.collection("questions").order_by("timestamp", direction=firestore.Query.DESCENDING).stream())
+    return list(
+        db.collection("questions")
+        .order_by("timestamp", direction=firestore.Query.DESCENDING)
+        .stream()
+    )
 
 @st.cache_resource(ttl=10)
 def fetch_questions_by_title(title):
-    return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
+    return list(
+        db.collection("questions")
+        .where("title", "==", title)
+        .order_by("timestamp")
+        .stream()
+    )
 
 # ===============================
 # ④ Session State の初期化（教師用）
@@ -78,28 +87,19 @@ def show_title_list():
     
     docs = fetch_all_questions()
     
-    # 学生側削除のシステムメッセージで登録されたタイトルは除外
-    deleted_system_titles = set()
-    for doc in docs:
-        data = doc.to_dict()
-        if data.get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました"):
-            deleted_system_titles.add(data.get("title"))
-    
-    # 重複除去＆教師側削除済みタイトルも除外
-    seen_titles = set()
-    # distinct_titles はタイトルとその投稿者名および認証キーの両方を保持する
-    distinct_titles = []
+    # 教師側では、学生側削除システムメッセージによるフィルタは行わず、
+    # 各タイトルの元の投稿情報（投稿者名、認証コード）を取得する
+    title_info = {}
     for doc in docs:
         data = doc.to_dict()
         title = data.get("title")
-        # ここでは、初回の投稿情報から認証キーを取得
-        auth_key = data.get("auth_key", "")
-        if title in seen_titles:
-            continue
-        seen_titles.add(title)
-        if title in deleted_system_titles or title in st.session_state.deleted_titles_teacher:
-            continue
-        distinct_titles.append({"title": title, "auth_key": auth_key})
+        # [SYSTEM]先生の削除メッセージは除外し、元の投稿情報を優先
+        if title not in title_info and not data.get("question", "").startswith("[SYSTEM]先生"):
+            poster = data.get("poster", "匿名")
+            auth_key = data.get("auth_key", "")
+            title_info[title] = {"title": title, "poster": poster, "auth_key": auth_key}
+    # 教師側で削除済みタイトルはセッション変数から除外
+    distinct_titles = [info for info in title_info.values() if info["title"] not in st.session_state.deleted_titles_teacher]
     
     # キーワードフィルタ（大文字小文字区別なし）
     if keyword:
@@ -110,10 +110,11 @@ def show_title_list():
     else:
         for idx, item in enumerate(distinct_titles):
             title = item["title"]
+            poster = item["poster"]
             auth_key = item["auth_key"]
             cols = st.columns([4, 1])
-            # タイトル横に「(認証コード: ○○)」を表示
-            if cols[0].button(f"{title} (認証コード: {auth_key})", key=f"title_button_{idx}"):
+            # タイトル横に投稿者名と認証コードを表示
+            if cols[0].button(f"{title} (投稿者: {poster}, 認証コード: {auth_key})", key=f"title_button_{idx}"):
                 st.session_state.selected_title = title
                 st.rerun()
             if cols[1].button("🗑", key=f"title_del_{idx}"):
@@ -129,7 +130,7 @@ def show_title_list():
             st.session_state.pending_delete_title = None
             st.session_state.deleted_titles_teacher.append(title)
             time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-            # 教師側削除システムメッセージを追加
+            # 教師側削除システムメッセージの追加
             db.collection("questions").add({
                 "title": title,
                 "question": "[SYSTEM]先生は質問フォームを削除しました",
@@ -138,12 +139,14 @@ def show_title_list():
                 "image": None
             })
             st.success("タイトルを削除しました。")
-            # もし既に学生側削除システムメッセージが存在すれば、全件削除
-            student_msgs = list(db.collection("questions")
-                                .where("title", "==", title)
-                                .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
-                                .stream())
-            if len(student_msgs) > 0:
+            # 既に生徒側削除システムメッセージが存在すれば、全件削除
+            student_msgs = list(
+                db.collection("questions")
+                .where("title", "==", title)
+                .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
+                .stream()
+            )
+            if student_msgs:
                 docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
                 for d in docs_to_delete:
                     d.reference.delete()
@@ -196,8 +199,8 @@ def show_chat_thread():
             continue
         
         # 教師側の場合：
-        #  - 「[先生]」で始まるメッセージは、教師自身の投稿として扱い、右寄せ・緑色（背景：#DCF8C6）で表示
-        #  - それ以外は学生の投稿として、左寄せで表示。なお、学生の投稿の場合は投稿者名を実際の値で表示する
+        #  - 「[先生]」で始まるメッセージは教師自身の投稿として扱い、右寄せ・背景緑（#DCF8C6）で表示
+        #  - それ以外は学生の投稿として扱い、左寄せ・背景白で表示。学生投稿の場合は実際の投稿者名を表示
         if msg_text.startswith("[先生]"):
             sender = "先生"
             is_self = True
@@ -236,7 +239,7 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 自分（教師）の投稿の場合、削除ボタンを表示
+        # 教師自身の投稿の場合、削除ボタンを表示
         if msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{msg_id}"):
                 st.session_state.pending_delete_msg_id = msg_id
