@@ -311,7 +311,7 @@ def show_chat_thread():
                 if submitted:
                     if not reply_text.strip() and not reply_image:  # メッセージが空 + 画像なし
                         st.error("少なくともメッセージか画像を投稿してください。")
-                        st.rerun()  # 画面を再読み込み
+                        
                     else:
                         time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                         img_data = reply_image.read() if reply_image else None
@@ -326,6 +326,10 @@ def show_chat_thread():
                         st.cache_resource.clear()
                         st.success("返信を送信しました！")
                         st.rerun()
+                        
+    # エラーメッセージがある場合、フォームの外で表示
+    if st.session_state.get("error_message"):
+        st.error(st.session_state.error_message)
             
     if st.button("戻る", key="teacher_chat_back"):
         st.session_state.selected_title = None
