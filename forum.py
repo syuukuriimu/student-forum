@@ -5,6 +5,44 @@ from zoneinfo import ZoneInfo  # タイムゾーン設定用
 import firebase_admin
 from firebase_admin import credentials, firestore
 import ast
+from PIL import Image
+import io
+
+# ===============================
+# 画像のリサイズ・圧縮処理
+# ===============================
+def process_image(image_file, max_size=1000000, max_width=800):
+    """
+    画像ファイルを読み込み、必要に応じてリサイズし、JPEG形式で圧縮します。
+    1MB 以下になるまで品質を下げながら保存し、最終的なバイナリデータを返します。
+    """
+    try:
+        image = Image.open(image_file)
+    except Exception as e:
+        st.error("画像の処理に失敗しました。")
+        return None
+
+    # JPEG で保存するために RGB に変換（アルファチャネルは除去）
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    
+    # 画像の幅が max_width を超えている場合はリサイズ（アスペクト比維持）
+    if image.width > max_width:
+        ratio = max_width / image.width
+        new_size = (max_width, int(image.height * ratio))
+        image = image.resize(new_size, Image.ANTIALIAS)
+    
+    quality = 95  # 初期品質
+    img_byte_arr = io.BytesIO()
+    image.save(img_byte_arr, format='JPEG', quality=quality)
+    
+    # サイズが max_size を超える場合、品質を下げながら再圧縮
+    while img_byte_arr.getbuffer().nbytes > max_size and quality > 10:
+        quality -= 5
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG', quality=quality)
+    img_byte_arr.seek(0)
+    return img_byte_arr.read()
 
 # ===============================
 # Firestore 初期化
@@ -91,7 +129,8 @@ def show_new_question_form():
             else:
                 poster_name = poster_name or "匿名"
                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                img_data = new_image.read() if new_image else None
+                # PIL を使って画像のリサイズ・圧縮を実施
+                img_data = process_image(new_image) if new_image is not None else None
                 db.collection("questions").add({
                     "title": new_title,
                     "question": new_text,
@@ -360,8 +399,7 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 【修正箇所】
-        # メッセージテキストが空の場合でも画像が存在すれば削除ボタンを表示するよう条件を修正
+        # 修正：テキストが空でも画像が存在すれば削除ボタンを表示する
         if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and not msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
@@ -403,16 +441,20 @@ def show_chat_thread():
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
                 submitted = st.form_submit_button("送信")
                 if submitted:
+                    # PIL を利用して返信画像もリサイズ・圧縮する
+                    if reply_image is not None:
+                        processed_reply = process_image(reply_image)
+                    else:
+                        processed_reply = None
+                        
                     if not reply_text.strip() and not reply_image:
                         st.error("少なくともメッセージか画像を投稿してください。")
                     else:
                         time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                        img_data = reply_image.read() if reply_image else None
-
                         db.collection("questions").add({
                             "title": selected_title,
                             "question": reply_text.strip(),
-                            "image": img_data,
+                            "image": processed_reply,
                             "timestamp": time_str,
                             "deleted": 0,
                             "poster": first_question_poster
