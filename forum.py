@@ -18,7 +18,7 @@ def process_image(image_file, max_size=1000000, initial_max_width=800):
     解像度（最大幅）をさらに縮小して再試行します。
     """
     try:
-        # もともとの画像を保持する
+        image_file.seek(0)
         original_image = Image.open(image_file)
     except Exception as e:
         st.error("画像の処理に失敗しました。")
@@ -29,7 +29,6 @@ def process_image(image_file, max_size=1000000, initial_max_width=800):
     
     current_max_width = initial_max_width
     while True:
-        # 毎回オリジナルからリサイズ
         if original_image.width > current_max_width:
             ratio = current_max_width / original_image.width
             new_size = (current_max_width, int(original_image.height * ratio))
@@ -37,11 +36,10 @@ def process_image(image_file, max_size=1000000, initial_max_width=800):
         else:
             resized = original_image.copy()
 
-        quality = 95  # 初期品質
+        quality = 95
         img_byte_arr = io.BytesIO()
         resized.save(img_byte_arr, format='JPEG', quality=quality)
         
-        # 品質を下げながらサイズチェック
         while img_byte_arr.getbuffer().nbytes > max_size and quality > 10:
             quality -= 5
             img_byte_arr = io.BytesIO()
@@ -51,7 +49,6 @@ def process_image(image_file, max_size=1000000, initial_max_width=800):
             img_byte_arr.seek(0)
             return img_byte_arr.read()
         else:
-            # さらに解像度を縮小して再試行
             current_max_width = int(current_max_width * 0.8)
             if current_max_width < 100:
                 break
@@ -112,7 +109,6 @@ if "poster" not in st.session_state:
 
 #####################################
 # 新規質問投稿フォーム（生徒側）
-# 初めは閉じた状態（expander collapsed）
 #####################################
 def show_new_question_form():
     with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
@@ -137,7 +133,6 @@ def show_new_question_form():
             else:
                 poster_name = poster_name or "匿名"
                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                # PIL を使って画像のリサイズ・圧縮を実施
                 img_data = process_image(new_image) if new_image is not None else None
                 db.collection("questions").add({
                     "title": new_title,
@@ -160,19 +155,16 @@ def show_new_question_form():
 #####################################
 def show_title_list():
     st.title("📖 質問フォーラム")
-    # 新規投稿フォームをページ上部に表示
     show_new_question_form()
-    
     st.subheader("質問一覧")
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     
     docs = fetch_all_questions()
-    
     deleted_system_titles = {doc.to_dict().get("title") for doc in docs 
                              if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
     
-    # タイトル情報を構築（システムメッセージのみ除外。教師の投稿も含む）
+    # タイトル情報の構築（システムメッセージのみ除外。教師の投稿も含む）
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
@@ -222,7 +214,6 @@ def show_title_list():
             with st.container():
                 title = item["title"]
                 poster = item["poster"]
-                auth_code = item["auth_key"]
                 update_time = item["update"]
                 cols = st.columns([8,2])
                 label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
@@ -233,9 +224,8 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 
-                # 認証フォームを、押されたタイトルの直下に表示する（余白を追加して表示位置を確保）
+                # 認証フォーム（タイトルアクセス用）の表示（余白なし）
                 if st.session_state.pending_auth_title == title:
-                    st.markdown("<br><br>", unsafe_allow_html=True)
                     st.markdown("---")
                     st.subheader(f"{title} の認証")
                     st.write("この質問にアクセスするには認証キーが必要です。")
@@ -264,6 +254,42 @@ def show_title_list():
                     elif back:
                         st.session_state.pending_auth_title = None
                         st.rerun()
+                
+                # 削除確認フォームの表示（タイトル削除用）
+                if st.session_state.pending_delete_title == title:
+                    st.markdown("---")
+                    st.subheader(f"{title} の削除確認")
+                    st.write("このタイトルを削除するには認証キーが必要です。")
+                    with st.form(key=f"delete_form_{idx}"):
+                        input_del_auth = st.text_input("認証キーを入力", type="password")
+                        submit_del = st.form_submit_button("削除する")
+                        cancel_del = st.form_submit_button("キャンセル")
+                    if submit_del:
+                        docs = fetch_questions_by_title(title)
+                        if docs:
+                            stored_auth_key = docs[0].to_dict().get("auth_key", "")
+                            if input_del_auth == stored_auth_key:
+                                st.session_state.deleted_titles_student.append(title)
+                                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                                poster_name = title_info.get(title, {}).get("poster", "匿名")
+                                db.collection("questions").add({
+                                    "title": title,
+                                    "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
+                                    "timestamp": time_str,
+                                    "deleted": 0,
+                                    "image": None,
+                                    "poster": poster_name,
+                                    "auth_key": title_info.get(title, {}).get("auth_key", "")
+                                })
+                                st.success("タイトルを削除しました。")
+                                st.session_state.pending_delete_title = None
+                                st.cache_resource.clear()
+                                st.rerun()
+                            else:
+                                st.error("認証キーが正しくありません。")
+                    elif cancel_del:
+                        st.session_state.pending_delete_title = None
+                        st.rerun()
 
 #####################################
 # 質問詳細（チャットスレッド）の表示（生徒側）
@@ -271,7 +297,6 @@ def show_title_list():
 def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
-    
     docs = fetch_questions_by_title(selected_title)
     
     first_question_poster = "匿名"
@@ -286,7 +311,6 @@ def show_chat_thread():
             st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
     
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
-    
     if not records:
         st.write("該当する質問が見つかりません。")
         return
@@ -357,7 +381,7 @@ def show_chat_thread():
                 if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
                     st.session_state.pending_delete_msg_id = None
                     st.rerun()
-
+    
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
         """
