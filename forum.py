@@ -8,6 +8,22 @@ import ast
 import cv2
 import numpy as np
 
+if "student_authenticated" not in st.session_state:
+    st.session_state.student_authenticated = False
+
+if not st.session_state.student_authenticated:
+    st.title("生徒ログイン")
+    password = st.text_input("パスワードを入力", type="password")
+
+    if st.button("ログイン", key="student_login"):
+        if password == st.secrets["student"]["password"]:
+            st.session_state.student_authenticated = True
+            st.rerun()
+        else:
+            st.error("パスワードが違います。")
+
+    st.stop()
+
 # ===============================
 # OpenCVを利用した画像圧縮処理
 # ===============================
