@@ -11,10 +11,10 @@ import io
 # ===============================
 # 画像のリサイズ・圧縮処理
 # ===============================
-def process_image(image_file, max_size=1000000, max_width=800):
+def process_image(image_file, max_size=1000000, initial_max_width=800):
     """
     画像ファイルを読み込み、必要に応じてリサイズし、JPEG形式で圧縮します。
-    1MB 以下になるまで品質を下げながら保存し、最終的なバイナリデータを返します。
+    1MB 以下になるまで、まず品質を下げ、最低品質（10）まで下がった場合は解像度をさらに縮小して再試行します。
     """
     try:
         image = Image.open(image_file)
@@ -22,27 +22,39 @@ def process_image(image_file, max_size=1000000, max_width=800):
         st.error("画像の処理に失敗しました。")
         return None
 
-    # JPEG で保存するために RGB に変換（アルファチャネルは除去）
     if image.mode != "RGB":
         image = image.convert("RGB")
     
-    # 画像の幅が max_width を超えている場合はリサイズ（アスペクト比維持）
-    if image.width > max_width:
-        ratio = max_width / image.width
-        new_size = (max_width, int(image.height * ratio))
-        image = image.resize(new_size, Image.ANTIALIAS)
-    
-    quality = 95  # 初期品質
-    img_byte_arr = io.BytesIO()
-    image.save(img_byte_arr, format='JPEG', quality=quality)
-    
-    # サイズが max_size を超える場合、品質を下げながら再圧縮
-    while img_byte_arr.getbuffer().nbytes > max_size and quality > 10:
-        quality -= 5
+    current_max_width = initial_max_width
+    while True:
+        # リサイズ（アスペクト比維持）: 現在の最大幅を超えている場合のみ縮小
+        if image.width > current_max_width:
+            ratio = current_max_width / image.width
+            new_size = (current_max_width, int(image.height * ratio))
+            resized = image.resize(new_size, Image.ANTIALIAS)
+        else:
+            resized = image
+
+        quality = 95  # 初期品質
         img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='JPEG', quality=quality)
-    img_byte_arr.seek(0)
-    return img_byte_arr.read()
+        resized.save(img_byte_arr, format='JPEG', quality=quality)
+        
+        # 品質を下げながらサイズチェック
+        while img_byte_arr.getbuffer().nbytes > max_size and quality > 10:
+            quality -= 5
+            img_byte_arr = io.BytesIO()
+            resized.save(img_byte_arr, format='JPEG', quality=quality)
+        
+        if img_byte_arr.getbuffer().nbytes <= max_size:
+            img_byte_arr.seek(0)
+            return img_byte_arr.read()
+        else:
+            # 品質が10まで下がってもサイズオーバーの場合は、解像度をさらに下げて再試行
+            current_max_width = int(current_max_width * 0.8)
+            if current_max_width < 100:  # これ以上は縮小しすぎるので打ち切り
+                break
+    st.error("画像の圧縮に失敗しました。")
+    return None
 
 # ===============================
 # Firestore 初期化
@@ -238,38 +250,35 @@ def show_title_list():
                 st.rerun()
     
     # タイトルクリック後の認証フォーム表示
-    if st.session_state.pending_auth_title:
-        st.markdown("---")
-        st.subheader(f"{st.session_state.pending_auth_title} の認証")
-        st.write("この質問にアクセスするには認証キーが必要です。")
-        with st.form("auth_form"):
-            input_auth_key = st.text_input("認証キーを入力", type="password")
-            submit_auth = st.form_submit_button("認証する")
-        if submit_auth:
-            if input_auth_key == "":
-                st.error("認証キーは必須です。")
-            else:
-                docs = fetch_questions_by_title(st.session_state.pending_auth_title)
-                if docs:
-                    stored_auth_key = docs[0].to_dict().get("auth_key", "")
-                    if input_auth_key == stored_auth_key:
-                        st.session_state.selected_title = st.session_state.pending_auth_title
-                        st.session_state.is_authenticated = True
+    if st.session_state.pending_auth_title == title:
+                    st.markdown("---")
+                    st.subheader(f"{title} の認証")
+                    st.write("この質問にアクセスするには認証キーが必要です。")
+                    with st.form(key=f"auth_form_{idx}"):
+                        input_auth_key = st.text_input("認証キーを入力", type="password")
+                        submit_auth = st.form_submit_button("認証する")
+                        no_auth = st.form_submit_button("認証しないで閲覧する")
+                        back = st.form_submit_button("戻る")
+                    if submit_auth:
+                        docs = fetch_questions_by_title(title)
+                        if docs:
+                            stored_auth_key = docs[0].to_dict().get("auth_key", "")
+                            if input_auth_key == stored_auth_key:
+                                st.session_state.selected_title = title
+                                st.session_state.is_authenticated = True
+                                st.session_state.pending_auth_title = None
+                                st.success("認証に成功しました。")
+                                st.rerun()
+                            else:
+                                st.error("認証キーが正しくありません。")
+                    elif no_auth:
+                        st.session_state.selected_title = title
+                        st.session_state.is_authenticated = False
                         st.session_state.pending_auth_title = None
-                        st.success("認証に成功しました。")
                         st.rerun()
-                    else:
-                        st.error("認証キーが正しくありません。")
-        col_auth = st.columns(2)
-        if col_auth[0].button("認証しないで閲覧する", key="no_auth"):
-            st.session_state.selected_title = st.session_state.pending_auth_title
-            st.session_state.is_authenticated = False
-            st.session_state.pending_auth_title = None
-            st.rerun()
-        if col_auth[1].button("戻る", key="auth_back"):
-            st.session_state.pending_auth_title = None
-            st.rerun()
-        st.markdown("---")
+                    elif back:
+                        st.session_state.pending_auth_title = None
+                        st.rerun()
     
     # タイトル削除確認（認証キー確認付き） – 生徒側（そのまま）
     if st.session_state.pending_delete_title:
