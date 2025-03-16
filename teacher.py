@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import base64
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -26,12 +27,38 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ===============================
+# カスタムコンポーネント：Firestore リアルタイム更新リスナー
+# ===============================
+def realtime_update_component():
+    firebase_config = st.secrets["firebase"]
+    firebase_config_js = "{" + ", ".join([f'"{k}": "{v}"' for k, v in firebase_config.items()]) + "}"
+    component_html = f"""
+    <html>
+      <head>
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+      </head>
+      <body>
+        <script>
+          var firebaseConfig = {firebase_config_js};
+          firebase.initializeApp(firebaseConfig);
+          var db = firebase.firestore();
+          db.collection("questions").onSnapshot(function(snapshot) {{
+              window.parent.postMessage({{isStreamlitMessage: true, type: "streamlit:setComponentValue", value: "update"}}, "*");
+          }});
+        </script>
+      </body>
+    </html>
+    """
+    return components.html(component_html, height=0)
+
+# ===============================
 # OpenCVを利用した画像圧縮処理
 # ===============================
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
     """
     ファイルポインタを先頭に戻し、画像ファイルを OpenCV で読み込みます。
-    横幅が max_width を超える場合はリサイズし、cv2.imencode() で JPEG 圧縮を行います。
+    横幅が max_width を超える場合はリサイズし、JPEG 圧縮を行います。
     品質を下げながら1MB以下に収める処理を行います。
     """
     try:
@@ -115,9 +142,9 @@ if "deleted_titles_teacher" not in st.session_state:
 if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 
-# ===============================
+#####################################
 # 質問一覧の表示（教師用）
-# ===============================
+#####################################
 def show_title_list():
     st.title("📖 質問フォーラム（教師用）")
     st.subheader("質問一覧")
@@ -215,7 +242,6 @@ def show_title_list():
                             "auth_key": auth_code
                         })
                         st.success("タイトルを削除しました。")
-                        # キャッシュクリアして最新データを取得
                         st.cache_resource.clear()
                         docs_for_title = fetch_questions_by_title(title)
                         student_deleted = any(
@@ -235,14 +261,14 @@ def show_title_list():
                     elif cancel_del:
                         st.session_state.pending_delete_title = None
                         st.rerun()
-    # タイトル一覧全体の更新ボタンを追加
-    if st.button("更新", key="teacher_title_update"):
-        st.cache_resource.clear()
-        st.rerun()
+    # リアルタイム更新コンポーネント（自動再描画）
+    rt_value = realtime_update_component()
+    if rt_value == "update":
+        st.experimental_rerun()
 
-# ===============================
+#####################################
 # 質問詳細（チャットスレッド）の表示（教師用）
-# ===============================
+#####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
@@ -310,67 +336,4 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 生徒側は自分の投稿（[先生]以外）に対して削除ボタンを表示
-        if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and msg_text.startswith("[先生]"):
-            if st.button("🗑", key=f"del_{doc.id}"):
-                st.session_state.pending_delete_msg_id = doc.id
-                st.rerun()
-            if st.session_state.get("pending_delete_msg_id") == doc.id:
-                st.warning("本当にこの投稿を削除しますか？")
-                confirm_col1, confirm_col2 = st.columns(2)
-                if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
-                    d_ref = db.collection("questions").document(doc.id)
-                    d_ref.update({"deleted": 1})
-                    st.session_state.pending_delete_msg_id = None
-                    st.cache_resource.clear()
-                    st.rerun()
-                if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
-                    st.session_state.pending_delete_msg_id = None
-                    st.rerun()
-    
-    st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        <script>
-        const el = document.getElementById('latest_message');
-        if(el){
-             el.scrollIntoView({behavior: 'smooth'});
-        }
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
-    st.write("---")
-    if st.button("更新", key="teacher_chat_update"):
-        st.cache_resource.clear()
-        st.rerun()
-    if st.session_state.is_authenticated:
-        with st.expander("返信する", expanded=False):
-            with st.form("teacher_reply_form", clear_on_submit=True):
-                reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
-                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
-                submitted = st.form_submit_button("送信")
-                if submitted:
-                    processed_reply = process_image(reply_image) if reply_image is not None else None
-                    if not reply_text.strip() and not reply_image:
-                        st.error("少なくともメッセージか画像を投稿してください。")
-                    else:
-                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                        db.collection("questions").add({
-                            "title": selected_title,
-                            "question": "[先生] " + reply_text.strip(),
-                            "image": processed_reply,
-                            "timestamp": time_str,
-                            "deleted": 0,   
-                        })
-                        st.cache_resource.clear()
-                        st.success("返信を送信しました！")
-                        st.rerun()
-    if st.button("戻る", key="teacher_chat_back"):
-        st.session_state.selected_title = None
-        st.rerun()
-
-if st.session_state.selected_title is None:
-    show_title_list()
-else:
-    show_chat_thread()
+        # 教師側は自分の投稿（[先生]で始ま

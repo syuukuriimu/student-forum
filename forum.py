@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import base64
 from datetime import datetime
 from zoneinfo import ZoneInfo  # タイムゾーン設定用
@@ -9,12 +10,41 @@ import cv2
 import numpy as np
 
 # ===============================
+# カスタムコンポーネント：Firestore リアルタイム更新リスナー
+# ===============================
+def realtime_update_component():
+    firebase_config = st.secrets["firebase"]
+    # JSON形式の文字列に変換
+    firebase_config_js = "{" + ", ".join([f'"{k}": "{v}"' for k, v in firebase_config.items()]) + "}"
+    component_html = f"""
+    <html>
+      <head>
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+      </head>
+      <body>
+        <script>
+          var firebaseConfig = {firebase_config_js};
+          firebase.initializeApp(firebaseConfig);
+          var db = firebase.firestore();
+          // Firestore の "questions" コレクションの更新を監視
+          db.collection("questions").onSnapshot(function(snapshot) {{
+              // 更新があった場合、"update" を Python 側に返す
+              window.parent.postMessage({{isStreamlitMessage: true, type: "streamlit:setComponentValue", value: "update"}}, "*");
+          }});
+        </script>
+      </body>
+    </html>
+    """
+    return components.html(component_html, height=0)
+
+# ===============================
 # OpenCVを利用した画像圧縮処理
 # ===============================
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
     """
     ファイルポインタを先頭に戻し、画像ファイルを OpenCV で読み込みます。
-    横幅が max_width を超える場合はリサイズし、cv2.imencode() で JPEG 圧縮を行います。
+    横幅が max_width を超える場合はリサイズし、JPEG 圧縮を行います。
     品質を下げながら1MB以下に収める処理を行います。
     """
     try:
@@ -67,7 +97,7 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 # ===============================
-# キャッシュを用いた Firestore アクセス（TTL 10秒）
+# キャッシュ付き Firestore アクセス（TTL 10秒）
 # ===============================
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
@@ -221,7 +251,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 
-                # 認証フォーム（タイトルアクセス用）の表示（余白なし）
+                # 認証フォーム（タイトルアクセス用）の表示
                 if st.session_state.pending_auth_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の認証")
@@ -252,7 +282,7 @@ def show_title_list():
                         st.session_state.pending_auth_title = None
                         st.rerun()
                 
-                # 削除確認フォームの表示（タイトル削除用、余白なし）
+                # 削除確認フォーム（タイトル削除用）
                 if st.session_state.pending_delete_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の削除確認")
@@ -279,7 +309,7 @@ def show_title_list():
                                     "auth_key": title_info.get(title, {}).get("auth_key", "")
                                 })
                                 st.success("タイトルを削除しました。")
-                                # キャッシュをクリアして最新のデータを取得
+                                # キャッシュクリアして最新データ取得
                                 st.cache_resource.clear()
                                 docs_for_title = fetch_questions_by_title(title)
                                 student_deleted = any(
@@ -301,10 +331,10 @@ def show_title_list():
                     elif cancel_del:
                         st.session_state.pending_delete_title = None
                         st.rerun()
-    # タイトル一覧全体の更新ボタンを追加
-    if st.button("更新", key="title_update"):
-        st.cache_resource.clear()
-        st.rerun()
+    # リアルタイム更新コンポーネント（自動再描画）
+    rt_value = realtime_update_component()
+    if rt_value == "update":
+        st.experimental_rerun()
 
 #####################################
 # 質問詳細（チャットスレッド）の表示（生徒側）
@@ -350,13 +380,13 @@ def show_chat_thread():
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
-            align = "left"
-            bg_color = "#FFFFFF"
+            align = "right"
+            bg_color = "#DCF8C6"
         else:
             sender = poster
             msg_display = msg_text
-            align = "right"
-            bg_color = "#DCF8C6"
+            align = "left"
+            bg_color = "#FFFFFF"
         
         st.markdown(
             f"""
@@ -412,11 +442,6 @@ def show_chat_thread():
         """,
         unsafe_allow_html=True
     )
-    st.write("---")
-    if st.button("更新", key="chat_update"):
-        st.cache_resource.clear()
-        st.rerun()
-    
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
             with st.form("reply_form_student", clear_on_submit=True):
@@ -440,12 +465,10 @@ def show_chat_thread():
                         st.cache_resource.clear()
                         st.success("返信を送信しました！")
                         st.rerun()
-    else:
-        st.info("認証されていないため、返信はできません。")
-    
-    if st.button("戻る", key="chat_back"):
-        st.session_state.selected_title = None
-        st.rerun()
+    # リアルタイム更新コンポーネントで自動再描画
+    rt_value = realtime_update_component()
+    if rt_value == "update":
+        st.experimental_rerun()
 
 if st.session_state.selected_title is None:
     show_title_list()
