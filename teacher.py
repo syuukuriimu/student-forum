@@ -188,21 +188,21 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 
-                 # タイトル削除確認（認証キー確認は不要、単純確認のみ）
-                if st.session_state.pending_delete_title:
-                    title = st.session_state.pending_delete_title
-                    st.warning(f"本当に「{title}」を削除してよろしいですか？")
-                    cols = st.columns(2)
-                    if cols[0].button("はい", key="teacher_del_confirm"):
+                # タイトル削除確認フォーム（対象タイトル直下に表示）
+                if st.session_state.pending_delete_title == title:
+                    st.markdown("---")
+                    st.subheader(f"{title} の削除確認")
+                    st.write("このタイトルを削除してよろしいですか？")
+                    with st.form(key=f"teacher_delete_form_{idx}"):
+                        submit_del = st.form_submit_button("はい")
+                        cancel_del = st.form_submit_button("キャンセル")
+                    if submit_del:
                         docs = fetch_questions_by_title(title)
                         if docs:
                             data0 = docs[0].to_dict()
-                            stored_auth_key = data0.get("auth_key", "")
                             poster_name = data0.get("poster") or "匿名"
                         else:
-                            stored_auth_key = ""
                             poster_name = "匿名"
-                        st.session_state.pending_delete_title = None
                         st.session_state.deleted_titles_teacher.append(title)
                         time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                         db.collection("questions").add({
@@ -212,29 +212,19 @@ def show_title_list():
                             "deleted": 0,
                             "image": None,
                             "poster": poster_name,
-                            "auth_key": stored_auth_key
+                            "auth_key": auth_code
                         })
                         st.success("タイトルを削除しました。")
-                        # 両側で削除されていた場合は完全削除
-                        student_msgs = list(
-                            db.collection("questions")
-                            .where("title", "==", title)
-                            .where("question", "==", "[SYSTEM]生徒はこの質問フォームを削除しました")
-                            .stream()
-                        )
-                        if student_msgs:
-                            docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
-                            for d in docs_to_delete:
-                                d.reference.delete()
+                        st.session_state.pending_delete_title = None
                         st.cache_resource.clear()
                         st.rerun()
-                    if cols[1].button("キャンセル", key="teacher_del_cancel"):
+                    elif cancel_del:
                         st.session_state.pending_delete_title = None
                         st.rerun()
-                
-                if st.button("更新", key="teacher_title_update"):
-                    st.cache_resource.clear()
-                    st.rerun()
+        # タイトル一覧全体の更新ボタンを追加
+        if st.button("更新", key="teacher_title_update"):
+            st.cache_resource.clear()
+            st.rerun()
 
 # ===============================
 # 質問詳細（チャットスレッド）の表示（教師用）
