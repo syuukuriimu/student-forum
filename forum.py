@@ -101,6 +101,8 @@ if "is_authenticated" not in st.session_state:
     st.session_state.is_authenticated = False
 if "poster" not in st.session_state:
     st.session_state.poster = None
+if "pending_delete_msg_id" not in st.session_state:
+    st.session_state.pending_delete_msg_id = None
 
 #####################################
 # 新規質問投稿フォーム（生徒側）
@@ -210,7 +212,7 @@ def show_title_list():
                 title = item["title"]
                 poster = item["poster"]
                 update_time = item["update"]
-                cols = st.columns([8,2])
+                cols = st.columns([8, 2])
                 label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
                 if cols[0].button(label, key=f"title_button_{idx}"):
                     st.session_state.pending_auth_title = title
@@ -277,7 +279,19 @@ def show_title_list():
                                     "auth_key": title_info.get(title, {}).get("auth_key", "")
                                 })
                                 st.success("タイトルを削除しました。")
-                                st.session_state.pending_delete_title = None
+                                
+                                # ★★ 追加処理 ★★
+                                # 同一タイトルについて、教師側の削除システムメッセージが存在するかチェック
+                                docs_for_title = fetch_questions_by_title(title)
+                                teacher_deleted = any(
+                                    doc.to_dict().get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました")
+                                    for doc in docs_for_title
+                                )
+                                if teacher_deleted:
+                                    # 両側が削除済みなので、全ドキュメントを完全削除
+                                    for doc in docs_for_title:
+                                        db.collection("questions").document(doc.id).delete()
+                                    st.success("両者による削除が確認されたため、データベースから完全に削除しました。")
                                 st.cache_resource.clear()
                                 st.rerun()
                             else:
