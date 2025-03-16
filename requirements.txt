@@ -1,7 +1,7 @@
 streamlit
 firebase-admin
 google-cloud-firestore
-opencv-python
+opencv-python-headless
 numpy
 
 
