@@ -5,55 +5,67 @@ from zoneinfo import ZoneInfo  # タイムゾーン設定用
 import firebase_admin
 from firebase_admin import credentials, firestore
 import ast
-from PIL import Image
-import io
+import cv2
+import numpy as np
+
 
 # ===============================
-# 画像のリサイズ・圧縮処理（Pillow版）
+# OpenCVを利用した画像圧縮処理
 # ===============================
-def process_image(image_file, max_size=1000000, initial_max_width=800):
+def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
     """
-    画像ファイルを読み込み、必要に応じてリサイズし、JPEG形式で圧縮します。
-    1MB 以下になるまで、まず品質を下げ、最低品質まで下がっても収まらなければ
-    解像度（最大幅）をさらに縮小して再試行します。
+    ファイルポインタを先頭に戻し、画像ファイルを OpenCV で読み込みます。
+    横幅が max_width を超える場合はリサイズし、cv2.imencode() で JPEG 圧縮を行います。
+    品質を下げながら1MB以下に収める処理を行います。
     """
     try:
         image_file.seek(0)
-        original_image = Image.open(image_file)
+        file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
     except Exception as e:
-        st.error("画像の処理に失敗しました。")
+        st.error("画像の読み込みに失敗しました。")
         return None
 
-    if original_image.mode != "RGB":
-        original_image = original_image.convert("RGB")
-    
-    current_max_width = initial_max_width
-    while True:
-        if original_image.width > current_max_width:
-            ratio = current_max_width / original_image.width
-            new_size = (current_max_width, int(original_image.height * ratio))
-            resized = original_image.resize(new_size, Image.ANTIALIAS)
-        else:
-            resized = original_image.copy()
+    if img is None:
+        st.error("画像のデコードに失敗しました。")
+        return None
 
-        quality = 95
-        img_byte_arr = io.BytesIO()
-        resized.save(img_byte_arr, format='JPEG', quality=quality)
-        
-        while img_byte_arr.getbuffer().nbytes > max_size and quality > 10:
-            quality -= 5
-            img_byte_arr = io.BytesIO()
-            resized.save(img_byte_arr, format='JPEG', quality=quality)
-        
-        if img_byte_arr.getbuffer().nbytes <= max_size:
-            img_byte_arr.seek(0)
-            return img_byte_arr.read()
-        else:
-            current_max_width = int(current_max_width * 0.8)
-            if current_max_width < 100:
-                break
+    height, width, _ = img.shape
+    if width > max_width:
+        ratio = max_width / width
+        new_width = max_width
+        new_height = int(height * ratio)
+        img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+    quality = initial_quality
+    while quality >= 10:
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+        result, encimg = cv2.imencode('.jpg', img, encode_param)
+        if not result:
+            st.error("画像の圧縮に失敗しました。")
+            return None
+        size = encimg.nbytes
+        if size <= max_size:
+            return encimg.tobytes()
+        quality -= 5
     st.error("画像の圧縮に失敗しました。")
     return None
+
+# ===============================
+# Firestore 初期化
+# ===============================
+if not firebase_admin._apps:
+    try:
+        firebase_creds = st.secrets["firebase"]
+        if isinstance(firebase_creds, str):
+            firebase_creds = ast.literal_eval(firebase_creds)
+        elif not isinstance(firebase_creds, dict):
+            firebase_creds = dict(firebase_creds)
+        cred = credentials.Certificate(firebase_creds)
+    except KeyError:
+        cred = credentials.Certificate("serviceAccountKey.json")
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 # ===============================
 # Firestore 初期化

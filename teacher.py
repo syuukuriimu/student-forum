@@ -7,7 +7,6 @@ from firebase_admin import credentials, firestore
 import ast
 import cv2
 import numpy as np
-import io
 
 # ===============================
 # 教師ログイン（初期認証）
