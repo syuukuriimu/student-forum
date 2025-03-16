@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import base64
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -27,40 +26,14 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ===============================
-# カスタムコンポーネント：Firestore リアルタイム更新リスナー
-# ===============================
-def realtime_update_component():
-    firebase_config = st.secrets["firebase"]
-    firebase_config_js = "{" + ", ".join([f'"{k}": "{v}"' for k, v in firebase_config.items()]) + "}"
-    component_html = f"""
-    <html>
-      <head>
-        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-      </head>
-      <body>
-        <script>
-          var firebaseConfig = {firebase_config_js};
-          firebase.initializeApp(firebaseConfig);
-          var db = firebase.firestore();
-          var firstSnapshot = true;
-          db.collection("questions").onSnapshot(function(snapshot) {{
-              if(firstSnapshot) {{
-                  firstSnapshot = false;
-              }} else {{
-                  window.parent.postMessage({{isStreamlitMessage: true, type: "streamlit:setComponentValue", value: "update"}}, "*");
-              }}
-          }});
-        </script>
-      </body>
-    </html>
-    """
-    return components.html(component_html, height=0)
-
-# ===============================
 # OpenCVを利用した画像圧縮処理
 # ===============================
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
+    """
+    ファイルポインタを先頭に戻し、画像ファイルを OpenCV で読み込みます。
+    横幅が max_width を超える場合はリサイズし、cv2.imencode() で JPEG 圧縮を行います。
+    品質を下げながら1MB以下に収める処理を行います。
+    """
     try:
         image_file.seek(0)
         file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
@@ -68,15 +41,18 @@ def process_image(image_file, max_size=1000000, max_width=800, initial_quality=9
     except Exception as e:
         st.error("画像の読み込みに失敗しました。")
         return None
+
     if img is None:
         st.error("画像のデコードに失敗しました。")
         return None
+
     height, width, _ = img.shape
     if width > max_width:
         ratio = max_width / width
         new_width = max_width
         new_height = int(height * ratio)
         img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
     quality = initial_quality
     while quality >= 10:
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
@@ -139,9 +115,9 @@ if "deleted_titles_teacher" not in st.session_state:
 if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 
-#####################################
+# ===============================
 # 質問一覧の表示（教師用）
-#####################################
+# ===============================
 def show_title_list():
     st.title("📖 質問フォーラム（教師用）")
     st.subheader("質問一覧")
@@ -212,7 +188,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 
-                # タイトル削除確認フォーム
+                # タイトル削除確認フォーム（対象タイトル直下に表示）
                 if st.session_state.pending_delete_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の削除確認")
@@ -239,6 +215,7 @@ def show_title_list():
                             "auth_key": auth_code
                         })
                         st.success("タイトルを削除しました。")
+                        # キャッシュクリアして最新データを取得
                         st.cache_resource.clear()
                         docs_for_title = fetch_questions_by_title(title)
                         student_deleted = any(
@@ -258,14 +235,14 @@ def show_title_list():
                     elif cancel_del:
                         st.session_state.pending_delete_title = None
                         st.rerun()
-    # リアルタイム更新コンポーネント（自動再描画）
-    rt_value = realtime_update_component()
-    if rt_value == "update":
-        st.experimental_rerun()
+    # タイトル一覧全体の更新ボタンを追加
+    if st.button("更新", key="teacher_title_update"):
+        st.cache_resource.clear()
+        st.rerun()
 
-#####################################
+# ===============================
 # 質問詳細（チャットスレッド）の表示（教師用）
-#####################################
+# ===============================
 def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
@@ -333,7 +310,7 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 教師側は自分の投稿（[先生]で始まる）に対して削除ボタンを表示
+        # 生徒側は自分の投稿（[先生]以外）に対して削除ボタンを表示
         if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
@@ -350,6 +327,7 @@ def show_chat_thread():
                 if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
                     st.session_state.pending_delete_msg_id = None
                     st.rerun()
+    
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
         """
@@ -362,7 +340,10 @@ def show_chat_thread():
         """,
         unsafe_allow_html=True
     )
-    
+    st.write("---")
+    if st.button("更新", key="teacher_chat_update"):
+        st.cache_resource.clear()
+        st.rerun()
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
             with st.form("teacher_reply_form", clear_on_submit=True):
@@ -388,12 +369,6 @@ def show_chat_thread():
     if st.button("戻る", key="teacher_chat_back"):
         st.session_state.selected_title = None
         st.rerun()
-
-    
-    # リアルタイム更新コンポーネントで自動再描画
-    rt_value = realtime_update_component()
-    if rt_value == "update":
-        st.experimental_rerun()
 
 if st.session_state.selected_title is None:
     show_title_list()
