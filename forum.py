@@ -220,52 +220,26 @@ def show_title_list():
                     st.rerun()
                 
                 # 認証フォーム（タイトルアクセス用）の表示（余白なし）
-                if st.session_state.pending_auth_title == title:
+                if st.session_state.pending_delete_title == title:
                     st.markdown("---")
-                    st.subheader(f"{title} の認証")
-                    st.write("この質問にアクセスするには認証キーが必要です。")
-                    with st.form(key=f"auth_form_{idx}"):
-                        input_auth_key = st.text_input("認証キーを入力", type="password")
-                        submit_auth = st.form_submit_button("認証する")
-                        no_auth = st.form_submit_button("認証しないで閲覧する")
-                        back = st.form_submit_button("戻る")
-                    if submit_auth:
+                    st.subheader(f"{title} の削除確認")
+                    st.write("このタイトルを削除するには認証キーが必要です。")
+
+                    with st.form(key=f"delete_form_{idx}"):
+                        input_del_auth = st.text_input("認証キーを入力", type="password")
+                        submit_del = st.form_submit_button("削除する")
+                        cancel_del = st.form_submit_button("キャンセル")
+
+                    if submit_del:
                         docs = fetch_questions_by_title(title)
                         if docs:
                             stored_auth_key = docs[0].to_dict().get("auth_key", "")
-                            if input_auth_key == stored_auth_key:
-                                st.session_state.selected_title = title
-                                st.session_state.is_authenticated = True
-                                st.session_state.pending_auth_title = None
-                                st.success("認証に成功しました。")
-                                st.rerun()
-                            else:
-                                st.error("認証キーが正しくありません。")
-                    elif no_auth:
-                        st.session_state.selected_title = title
-                        st.session_state.is_authenticated = False
-                        st.session_state.pending_auth_title = None
-                        st.rerun()
-                    elif back:
-                        st.session_state.pending_auth_title = None
-                        st.rerun()
-                
-                # 削除確認フォームの表示（タイトル削除用、余白なし）
-                if st.session_state.pending_delete_title:
-                    title = st.session_state.pending_delete_title
-                    st.warning("このタイトルを削除するには認証キーを入力してください。")
-                    with st.form("delete_title_form"):
-                        delete_auth_key = st.text_input("認証キー", type="password")
-                        delete_submit = st.form_submit_button("削除する")
-                    if delete_submit:
-                        docs = fetch_questions_by_title(title)
-                        if docs:
-                            stored_auth_key = docs[0].to_dict().get("auth_key", "")
-                            if delete_auth_key == stored_auth_key:
-                                st.session_state.pending_delete_title = None
+                            if input_del_auth == stored_auth_key:
                                 st.session_state.deleted_titles_student.append(title)
                                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                                 poster_name = title_info.get(title, {}).get("poster", "匿名")
+
+                                # Firestore に削除メッセージを追加（生徒側）
                                 db.collection("questions").add({
                                     "title": title,
                                     "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
@@ -275,29 +249,31 @@ def show_title_list():
                                     "poster": poster_name,
                                     "auth_key": title_info.get(title, {}).get("auth_key", "")
                                 })
-                                st.success("タイトルを削除しました。")
-                                # 両側で削除された場合は完全にDBから削除
+
+                                # 先生側の削除メッセージが存在するかチェック
                                 teacher_msgs = list(
                                     db.collection("questions")
                                     .where("title", "==", title)
                                     .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
                                     .stream()
                                 )
+
+                                # 先生側の削除メッセージが存在する場合、完全削除
                                 if teacher_msgs:
                                     docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
                                     for d in docs_to_delete:
                                         d.reference.delete()
+
+                                st.success("タイトルを削除しました。")
+                                st.session_state.pending_delete_title = None
                                 st.cache_resource.clear()
                                 st.rerun()
                             else:
                                 st.error("認証キーが正しくありません。")
-                    if st.button("キャンセル", key="del_confirm_no"):
+
+                    elif cancel_del:
                         st.session_state.pending_delete_title = None
                         st.rerun()
-                
-                if st.button("更新", key="title_update"):
-                    st.cache_resource.clear()
-                    st.rerun()
 
 #####################################
 # 質問詳細（チャットスレッド）の表示（生徒側）
