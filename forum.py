@@ -5,44 +5,48 @@ from zoneinfo import ZoneInfo  # タイムゾーン設定用
 import firebase_admin
 from firebase_admin import credentials, firestore
 import ast
-from PIL import Image
-import io
+import cv2
+import numpy as np
 
 # ===============================
-# 画像のリサイズ・圧縮処理（新方式）
+# 画像のリサイズ・圧縮処理（OpenCV版）
 # ===============================
-def process_image(image_file, max_size=1000000, max_width=800):
+def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
     """
-    ファイルポインタを先頭に戻し、画像を読み込みます。
-    RGBに変換した後、thumbnail()を使って指定の最大幅以内にリサイズし、
-    optimize=True, progressive=True を指定してJPEG形式で保存します。
-    品質を下げながら1MB以下のサイズになるまで試行します。
+    ファイルポインタを先頭に戻し、画像ファイルを OpenCV で読み込みます。
+    画像の横幅が max_width を超える場合はリサイズし、
+    cv2.imencode() で JPEG 圧縮を行い、品質を下げながら 1MB 以下に収めます。
     """
     try:
         image_file.seek(0)
-        img = Image.open(image_file)
+        file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
     except Exception as e:
         st.error("画像の読み込みに失敗しました。")
         return None
 
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    
-    # thumbnail()はアスペクト比を維持して最大幅・高さ以内にリサイズします。
-    img.thumbnail((max_width, max_width), Image.ANTIALIAS)
-    
-    quality = 95
-    while quality > 10:
-        buffer = io.BytesIO()
-        try:
-            img.save(buffer, format="JPEG", quality=quality, optimize=True, progressive=True)
-        except Exception as e:
+    if img is None:
+        st.error("画像のデコードに失敗しました。")
+        return None
+
+    # リサイズ（横幅が max_width を超える場合、アスペクト比維持）
+    height, width, _ = img.shape
+    if width > max_width:
+        ratio = max_width / width
+        new_width = max_width
+        new_height = int(height * ratio)
+        img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+    quality = initial_quality
+    while quality >= 10:
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+        result, encimg = cv2.imencode('.jpg', img, encode_param)
+        if not result:
             st.error("画像の圧縮に失敗しました。")
             return None
-        size = buffer.tell()
+        size = encimg.nbytes
         if size <= max_size:
-            buffer.seek(0)
-            return buffer.read()
+            return encimg.tobytes()
         quality -= 5
     st.error("画像の圧縮に失敗しました。")
     return None
@@ -216,7 +220,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 
-                # 認証フォームの表示（余白なし、区切り線のみ）
+                # 認証フォーム（タイトルアクセス用）の表示（余白なし）
                 if st.session_state.pending_auth_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の認証")
@@ -247,7 +251,7 @@ def show_title_list():
                         st.session_state.pending_auth_title = None
                         st.rerun()
                 
-                # 削除確認フォームの表示（余白なし）
+                # 削除確認フォームの表示（タイトル削除用、余白なし）
                 if st.session_state.pending_delete_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の削除確認")
