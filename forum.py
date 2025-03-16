@@ -279,9 +279,8 @@ def show_title_list():
                                     "auth_key": title_info.get(title, {}).get("auth_key", "")
                                 })
                                 st.success("タイトルを削除しました。")
-                                
-                                # ★★ 追加処理 ★★
-                                # 対象タイトルについて、両側の削除システムメッセージが存在するかチェック
+                                # キャッシュをクリアして最新のデータを取得
+                                st.cache_resource.clear()
                                 docs_for_title = fetch_questions_by_title(title)
                                 student_deleted = any(
                                     doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")
@@ -383,7 +382,7 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 生徒側は自分の投稿（生徒側投稿は [先生] 以外）に対して削除ボタンを表示
+        # 生徒側は自分の投稿（[先生]以外）に対して削除ボタンを表示
         if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and not msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
