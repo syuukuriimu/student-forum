@@ -431,10 +431,6 @@ def show_chat_thread():
         """,
         unsafe_allow_html=True
     )
-    st.write("---")
-    if st.button("更新", key="chat_update"):
-        st.cache_resource.clear()
-        st.rerun()
     
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
