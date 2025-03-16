@@ -9,49 +9,41 @@ from PIL import Image
 import io
 
 # ===============================
-# 画像のリサイズ・圧縮処理
+# 画像のリサイズ・圧縮処理（新方式）
 # ===============================
-def process_image(image_file, max_size=1000000, initial_max_width=800):
+def process_image(image_file, max_size=1000000, max_width=800):
     """
-    画像ファイルを読み込み、必要に応じてリサイズし、JPEG形式で圧縮します。
-    1MB 以下になるまで、まず品質を下げ、最低品質まで下がっても収まらなければ
-    解像度（最大幅）をさらに縮小して再試行します。
+    ファイルポインタを先頭に戻し、画像を読み込みます。
+    RGBに変換した後、thumbnail()を使って指定の最大幅以内にリサイズし、
+    optimize=True, progressive=True を指定してJPEG形式で保存します。
+    品質を下げながら1MB以下のサイズになるまで試行します。
     """
     try:
         image_file.seek(0)
-        original_image = Image.open(image_file)
+        img = Image.open(image_file)
     except Exception as e:
-        st.error("画像の処理に失敗しました。")
+        st.error("画像の読み込みに失敗しました。")
         return None
 
-    if original_image.mode != "RGB":
-        original_image = original_image.convert("RGB")
+    if img.mode != "RGB":
+        img = img.convert("RGB")
     
-    current_max_width = initial_max_width
-    while True:
-        if original_image.width > current_max_width:
-            ratio = current_max_width / original_image.width
-            new_size = (current_max_width, int(original_image.height * ratio))
-            resized = original_image.resize(new_size, Image.ANTIALIAS)
-        else:
-            resized = original_image.copy()
-
-        quality = 95
-        img_byte_arr = io.BytesIO()
-        resized.save(img_byte_arr, format='JPEG', quality=quality)
-        
-        while img_byte_arr.getbuffer().nbytes > max_size and quality > 10:
-            quality -= 5
-            img_byte_arr = io.BytesIO()
-            resized.save(img_byte_arr, format='JPEG', quality=quality)
-        
-        if img_byte_arr.getbuffer().nbytes <= max_size:
-            img_byte_arr.seek(0)
-            return img_byte_arr.read()
-        else:
-            current_max_width = int(current_max_width * 0.8)
-            if current_max_width < 100:
-                break
+    # thumbnail()はアスペクト比を維持して最大幅・高さ以内にリサイズします。
+    img.thumbnail((max_width, max_width), Image.ANTIALIAS)
+    
+    quality = 95
+    while quality > 10:
+        buffer = io.BytesIO()
+        try:
+            img.save(buffer, format="JPEG", quality=quality, optimize=True, progressive=True)
+        except Exception as e:
+            st.error("画像の圧縮に失敗しました。")
+            return None
+        size = buffer.tell()
+        if size <= max_size:
+            buffer.seek(0)
+            return buffer.read()
+        quality -= 5
     st.error("画像の圧縮に失敗しました。")
     return None
 
@@ -164,7 +156,7 @@ def show_title_list():
     deleted_system_titles = {doc.to_dict().get("title") for doc in docs 
                              if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
     
-    # タイトル情報の構築（システムメッセージのみ除外。教師の投稿も含む）
+    # タイトル情報を構築（システムメッセージのみ除外。教師の投稿も含む）
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
@@ -224,7 +216,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 
-                # 認証フォーム（タイトルアクセス用）の表示（余白なし）
+                # 認証フォームの表示（余白なし、区切り線のみ）
                 if st.session_state.pending_auth_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の認証")
@@ -255,7 +247,7 @@ def show_title_list():
                         st.session_state.pending_auth_title = None
                         st.rerun()
                 
-                # 削除確認フォームの表示（タイトル削除用）
+                # 削除確認フォームの表示（余白なし）
                 if st.session_state.pending_delete_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の削除確認")
