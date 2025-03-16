@@ -5,49 +5,53 @@ from zoneinfo import ZoneInfo  # タイムゾーン設定用
 import firebase_admin
 from firebase_admin import credentials, firestore
 import ast
-import cv2
-import numpy as np
+from PIL import Image
+import io
 
 # ===============================
-# 画像のリサイズ・圧縮処理（OpenCV版）
+# 画像のリサイズ・圧縮処理（Pillow版）
 # ===============================
-def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
+def process_image(image_file, max_size=1000000, initial_max_width=800):
     """
-    ファイルポインタを先頭に戻し、画像ファイルを OpenCV で読み込みます。
-    画像の横幅が max_width を超える場合はリサイズし、
-    cv2.imencode() で JPEG 圧縮を行い、品質を下げながら 1MB 以下に収めます。
+    画像ファイルを読み込み、必要に応じてリサイズし、JPEG形式で圧縮します。
+    1MB 以下になるまで、まず品質を下げ、最低品質まで下がっても収まらなければ
+    解像度（最大幅）をさらに縮小して再試行します。
     """
     try:
         image_file.seek(0)
-        file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
-        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        original_image = Image.open(image_file)
     except Exception as e:
-        st.error("画像の読み込みに失敗しました。")
+        st.error("画像の処理に失敗しました。")
         return None
 
-    if img is None:
-        st.error("画像のデコードに失敗しました。")
-        return None
+    if original_image.mode != "RGB":
+        original_image = original_image.convert("RGB")
+    
+    current_max_width = initial_max_width
+    while True:
+        if original_image.width > current_max_width:
+            ratio = current_max_width / original_image.width
+            new_size = (current_max_width, int(original_image.height * ratio))
+            resized = original_image.resize(new_size, Image.ANTIALIAS)
+        else:
+            resized = original_image.copy()
 
-    # リサイズ（横幅が max_width を超える場合、アスペクト比維持）
-    height, width, _ = img.shape
-    if width > max_width:
-        ratio = max_width / width
-        new_width = max_width
-        new_height = int(height * ratio)
-        img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-
-    quality = initial_quality
-    while quality >= 10:
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
-        result, encimg = cv2.imencode('.jpg', img, encode_param)
-        if not result:
-            st.error("画像の圧縮に失敗しました。")
-            return None
-        size = encimg.nbytes
-        if size <= max_size:
-            return encimg.tobytes()
-        quality -= 5
+        quality = 95
+        img_byte_arr = io.BytesIO()
+        resized.save(img_byte_arr, format='JPEG', quality=quality)
+        
+        while img_byte_arr.getbuffer().nbytes > max_size and quality > 10:
+            quality -= 5
+            img_byte_arr = io.BytesIO()
+            resized.save(img_byte_arr, format='JPEG', quality=quality)
+        
+        if img_byte_arr.getbuffer().nbytes <= max_size:
+            img_byte_arr.seek(0)
+            return img_byte_arr.read()
+        else:
+            current_max_width = int(current_max_width * 0.8)
+            if current_max_width < 100:
+                break
     st.error("画像の圧縮に失敗しました。")
     return None
 
@@ -160,7 +164,7 @@ def show_title_list():
     deleted_system_titles = {doc.to_dict().get("title") for doc in docs 
                              if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
     
-    # タイトル情報を構築（システムメッセージのみ除外。教師の投稿も含む）
+    # タイトル情報の構築（システムメッセージのみ除外。教師の投稿も含む）
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
@@ -286,6 +290,10 @@ def show_title_list():
                     elif cancel_del:
                         st.session_state.pending_delete_title = None
                         st.rerun()
+        # タイトル一覧全体の更新ボタンを追加
+        if st.button("更新", key="title_update"):
+            st.cache_resource.clear()
+            st.rerun()
 
 #####################################
 # 質問詳細（チャットスレッド）の表示（生徒側）
@@ -293,6 +301,7 @@ def show_title_list():
 def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
+    
     docs = fetch_questions_by_title(selected_title)
     
     first_question_poster = "匿名"
@@ -307,6 +316,7 @@ def show_chat_thread():
             st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
     
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
+    
     if not records:
         st.write("該当する質問が見つかりません。")
         return
@@ -424,7 +434,7 @@ def show_chat_thread():
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.rerun()
- 
+
 if st.session_state.selected_title is None:
     show_title_list()
 else:

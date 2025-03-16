@@ -47,7 +47,6 @@ def process_image(image_file, max_size=1000000, max_width=800, initial_quality=9
         st.error("画像のデコードに失敗しました。")
         return None
 
-    # リサイズ：横幅が max_width を超える場合、アスペクト比を維持してリサイズ
     height, width, _ = img.shape
     if width > max_width:
         ratio = max_width / width
@@ -127,7 +126,7 @@ def show_title_list():
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     
     docs = fetch_all_questions()
-    teacher_deleted_titles = {doc.to_dict().get("title") for doc in docs 
+    teacher_deleted_titles = { doc.to_dict().get("title") for doc in docs 
                               if doc.to_dict().get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました")}
     
     title_info = {}
@@ -190,7 +189,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 
-                # タイトル削除確認フォームを、対象タイトル直下に表示（余白なし）
+                # タイトル削除確認フォーム（対象タイトル直下に表示）
                 if st.session_state.pending_delete_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の削除確認")
@@ -223,6 +222,10 @@ def show_title_list():
                     elif cancel_del:
                         st.session_state.pending_delete_title = None
                         st.rerun()
+        # タイトル一覧全体の更新ボタンを追加
+        if st.button("更新", key="teacher_title_update"):
+            st.cache_resource.clear()
+            st.rerun()
 
 # ===============================
 # 質問詳細（チャットスレッド）の表示（教師用）
