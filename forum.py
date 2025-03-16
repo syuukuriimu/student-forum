@@ -14,26 +14,28 @@ import io
 def process_image(image_file, max_size=1000000, initial_max_width=800):
     """
     画像ファイルを読み込み、必要に応じてリサイズし、JPEG形式で圧縮します。
-    1MB 以下になるまで、まず品質を下げ、最低品質（10）まで下がった場合は解像度をさらに縮小して再試行します。
+    1MB 以下になるまで、まず品質を下げ、最低品質まで下がっても収まらなければ
+    解像度（最大幅）をさらに縮小して再試行します。
     """
     try:
-        image = Image.open(image_file)
+        # もともとの画像を保持する
+        original_image = Image.open(image_file)
     except Exception as e:
         st.error("画像の処理に失敗しました。")
         return None
 
-    if image.mode != "RGB":
-        image = image.convert("RGB")
+    if original_image.mode != "RGB":
+        original_image = original_image.convert("RGB")
     
     current_max_width = initial_max_width
     while True:
-        # リサイズ（アスペクト比維持）: 現在の最大幅を超えている場合のみ縮小
-        if image.width > current_max_width:
-            ratio = current_max_width / image.width
-            new_size = (current_max_width, int(image.height * ratio))
-            resized = image.resize(new_size, Image.ANTIALIAS)
+        # 毎回オリジナルからリサイズ
+        if original_image.width > current_max_width:
+            ratio = current_max_width / original_image.width
+            new_size = (current_max_width, int(original_image.height * ratio))
+            resized = original_image.resize(new_size, Image.ANTIALIAS)
         else:
-            resized = image
+            resized = original_image.copy()
 
         quality = 95  # 初期品質
         img_byte_arr = io.BytesIO()
@@ -49,9 +51,9 @@ def process_image(image_file, max_size=1000000, initial_max_width=800):
             img_byte_arr.seek(0)
             return img_byte_arr.read()
         else:
-            # 品質が10まで下がってもサイズオーバーの場合は、解像度をさらに下げて再試行
+            # さらに解像度を縮小して再試行
             current_max_width = int(current_max_width * 0.8)
-            if current_max_width < 100:  # これ以上は縮小しすぎるので打ち切り
+            if current_max_width < 100:
                 break
     st.error("画像の圧縮に失敗しました。")
     return None
@@ -120,12 +122,10 @@ def show_new_question_form():
             new_text = st.text_area("質問内容を入力", key="new_text")
             new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
             poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-            # 認証キーは必須、10文字までに制限
             auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
         if submitted:
-            # 重複チェック：生徒側で削除されたタイトルは除外
             existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                                if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
             if new_title in existing_titles:
@@ -134,10 +134,6 @@ def show_new_question_form():
                 st.error("タイトルと質問内容は必須です。")
             elif auth_key == "":
                 st.error("認証キーは必須入力です。")
-                try:
-                    st.session_state["new_auth_key"] = ""
-                except Exception:
-                    pass
             else:
                 poster_name = poster_name or "匿名"
                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
@@ -157,10 +153,6 @@ def show_new_question_form():
                 st.session_state.selected_title = new_title
                 st.session_state.is_authenticated = True
                 st.session_state.poster = poster_name
-                try:
-                    st.session_state["new_auth_key"] = ""
-                except Exception:
-                    pass
                 st.rerun()
 
 #####################################
@@ -172,26 +164,22 @@ def show_title_list():
     show_new_question_form()
     
     st.subheader("質問一覧")
-    
-    # 検索：入力文字列をスペースで分割し、タイトルおよび投稿者名に全ての単語が含まれているか
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     
     docs = fetch_all_questions()
     
-    # 生徒側削除システムメッセージ（"[SYSTEM]生徒はこの質問フォームを削除しました"）のタイトルを除外
     deleted_system_titles = {doc.to_dict().get("title") for doc in docs 
                              if doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
     
-    # ユーザー投稿情報（システムメッセージのみ除外）
-    # ※修正：[先生] で始まる投稿も含め、すべての投稿を対象とする
+    # タイトル情報を構築（システムメッセージのみ除外。教師の投稿も含む）
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
         if data.get("question", "").startswith("[SYSTEM]"):
             continue
         title = data.get("title")
-        poster = data.get("poster") or "匿名"  # 投稿者名が空なら匿名
+        poster = data.get("poster") or "匿名"
         auth_key = data.get("auth_key", "")
         timestamp = data.get("timestamp", "")
         if title in title_info:
@@ -208,7 +196,6 @@ def show_title_list():
                 "orig_timestamp": timestamp,
                 "update": timestamp
             }
-
     distinct_titles = []
     for title, info in title_info.items():
         if title in deleted_system_titles or title in st.session_state.deleted_titles_student:
@@ -219,38 +206,36 @@ def show_title_list():
             "auth_key": info["auth_key"],
             "update": info["update"]
         })
-
     
-    # 検索フィルタ：タイトルまたは投稿者名に全キーワードが含まれているか
     if keywords:
         def match(item):
             text = (item["title"] + " " + item["poster"]).lower()
             return all(kw in text for kw in keywords)
         distinct_titles = [item for item in distinct_titles if match(item)]
     
-    # ソート：更新日時の降順（返信日時のみ変動）
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
     
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
-        # カラム比率 [8,2]：タイトル（投稿者名と認証コードは固定）と削除ボタン
         for idx, item in enumerate(distinct_titles):
-            title = item["title"]
-            poster = item["poster"]
-            auth_code = item["auth_key"]
-            update_time = item["update"]
-            cols = st.columns([8,2])
-            label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
-            if cols[0].button(label, key=f"title_button_{idx}"):
-                st.session_state.pending_auth_title = title
-                st.rerun()
-            if cols[1].button("🗑", key=f"title_del_{idx}"):
-                st.session_state.pending_delete_title = title
-                st.rerun()
-    
-    # タイトルクリック後の認証フォーム表示
-    if st.session_state.pending_auth_title == title:
+            with st.container():
+                title = item["title"]
+                poster = item["poster"]
+                auth_code = item["auth_key"]
+                update_time = item["update"]
+                cols = st.columns([8,2])
+                label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
+                if cols[0].button(label, key=f"title_button_{idx}"):
+                    st.session_state.pending_auth_title = title
+                    st.rerun()
+                if cols[1].button("🗑", key=f"title_del_{idx}"):
+                    st.session_state.pending_delete_title = title
+                    st.rerun()
+                
+                # 認証フォームを、押されたタイトルの直下に表示する（余白を追加して表示位置を確保）
+                if st.session_state.pending_auth_title == title:
+                    st.markdown("<br><br>", unsafe_allow_html=True)
                     st.markdown("---")
                     st.subheader(f"{title} の認証")
                     st.write("この質問にアクセスするには認証キーが必要です。")
@@ -279,55 +264,6 @@ def show_title_list():
                     elif back:
                         st.session_state.pending_auth_title = None
                         st.rerun()
-    
-    # タイトル削除確認（認証キー確認付き） – 生徒側（そのまま）
-    if st.session_state.pending_delete_title:
-        title = st.session_state.pending_delete_title
-        st.warning("このタイトルを削除するには認証キーを入力してください。")
-        with st.form("delete_title_form"):
-            delete_auth_key = st.text_input("認証キー", type="password")
-            delete_submit = st.form_submit_button("削除する")
-        if delete_submit:
-            docs = fetch_questions_by_title(title)
-            if docs:
-                stored_auth_key = docs[0].to_dict().get("auth_key", "")
-                if delete_auth_key == stored_auth_key:
-                    st.session_state.pending_delete_title = None
-                    st.session_state.deleted_titles_student.append(title)
-                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                    poster_name = title_info.get(title, {}).get("poster", "匿名")
-                    db.collection("questions").add({
-                        "title": title,
-                        "question": "[SYSTEM]生徒はこの質問フォームを削除しました",
-                        "timestamp": time_str,
-                        "deleted": 0,
-                        "image": None,
-                        "poster": poster_name,
-                        "auth_key": title_info.get(title, {}).get("auth_key", "")
-                    })
-                    st.success("タイトルを削除しました。")
-                    # 両側で削除された場合は完全にDBから削除
-                    teacher_msgs = list(
-                        db.collection("questions")
-                        .where("title", "==", title)
-                        .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
-                        .stream()
-                    )
-                    if teacher_msgs:
-                        docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
-                        for d in docs_to_delete:
-                            d.reference.delete()
-                    st.cache_resource.clear()
-                    st.rerun()
-                else:
-                    st.error("認証キーが正しくありません。")
-        if st.button("キャンセル", key="del_confirm_no"):
-            st.session_state.pending_delete_title = None
-            st.rerun()
-    
-    if st.button("更新", key="title_update"):
-        st.cache_resource.clear()
-        st.rerun()
 
 #####################################
 # 質問詳細（チャットスレッド）の表示（生徒側）
@@ -338,13 +274,11 @@ def show_chat_thread():
     
     docs = fetch_questions_by_title(selected_title)
     
-    # 最初の質問の投稿者を取得
-    first_question_poster = "匿名"  # デフォルト値
+    first_question_poster = "匿名"
     if docs:
         first_question = docs[0].to_dict()
         first_question_poster = first_question.get("poster", "匿名")
     
-    # システムメッセージの表示（赤字・中央寄せ）
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
@@ -372,7 +306,6 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
-        # 修正：生徒側では、教師の投稿は左寄せ・背景白、生徒の投稿は右寄せ・背景緑
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
@@ -408,7 +341,6 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 修正：テキストが空でも画像が存在すれば削除ボタンを表示する
         if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and not msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
@@ -450,12 +382,7 @@ def show_chat_thread():
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
                 submitted = st.form_submit_button("送信")
                 if submitted:
-                    # PIL を利用して返信画像もリサイズ・圧縮する
-                    if reply_image is not None:
-                        processed_reply = process_image(reply_image)
-                    else:
-                        processed_reply = None
-                        
+                    processed_reply = process_image(reply_image) if reply_image is not None else None
                     if not reply_text.strip() and not reply_image:
                         st.error("少なくともメッセージか画像を投稿してください。")
                     else:
@@ -478,9 +405,6 @@ def show_chat_thread():
         st.session_state.selected_title = None
         st.rerun()
  
-#####################################
-# メイン表示の切り替え（生徒側）
-#####################################
 if st.session_state.selected_title is None:
     show_title_list()
 else:
