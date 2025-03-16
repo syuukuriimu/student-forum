@@ -14,7 +14,6 @@ import numpy as np
 # ===============================
 def realtime_update_component():
     firebase_config = st.secrets["firebase"]
-    # JSON形式の文字列に変換
     firebase_config_js = "{" + ", ".join([f'"{k}": "{v}"' for k, v in firebase_config.items()]) + "}"
     component_html = f"""
     <html>
@@ -27,26 +26,25 @@ def realtime_update_component():
           var firebaseConfig = {firebase_config_js};
           firebase.initializeApp(firebaseConfig);
           var db = firebase.firestore();
-          // Firestore の "questions" コレクションの更新を監視
+          var firstSnapshot = true;
           db.collection("questions").onSnapshot(function(snapshot) {{
-              // 更新があった場合、"update" を Python 側に返す
-              window.parent.postMessage({{isStreamlitMessage: true, type: "streamlit:setComponentValue", value: "update"}}, "*");
+              if(firstSnapshot) {{
+                  firstSnapshot = false;
+              }} else {{
+                  window.parent.postMessage({{isStreamlitMessage: true, type: "streamlit:setComponentValue", value: "update"}}, "*");
+              }}
           }});
         </script>
       </body>
     </html>
     """
+    # 高さは0（非表示）でOK
     return components.html(component_html, height=0)
 
 # ===============================
 # OpenCVを利用した画像圧縮処理
 # ===============================
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
-    """
-    ファイルポインタを先頭に戻し、画像ファイルを OpenCV で読み込みます。
-    横幅が max_width を超える場合はリサイズし、JPEG 圧縮を行います。
-    品質を下げながら1MB以下に収める処理を行います。
-    """
     try:
         image_file.seek(0)
         file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
@@ -54,18 +52,15 @@ def process_image(image_file, max_size=1000000, max_width=800, initial_quality=9
     except Exception as e:
         st.error("画像の読み込みに失敗しました。")
         return None
-
     if img is None:
         st.error("画像のデコードに失敗しました。")
         return None
-
     height, width, _ = img.shape
     if width > max_width:
         ratio = max_width / width
         new_width = max_width
         new_height = int(height * ratio)
         img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-
     quality = initial_quality
     while quality >= 10:
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
@@ -309,7 +304,6 @@ def show_title_list():
                                     "auth_key": title_info.get(title, {}).get("auth_key", "")
                                 })
                                 st.success("タイトルを削除しました。")
-                                # キャッシュクリアして最新データ取得
                                 st.cache_resource.clear()
                                 docs_for_title = fetch_questions_by_title(title)
                                 student_deleted = any(
@@ -372,11 +366,9 @@ def show_chat_thread():
             formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
         except Exception:
             formatted_time = msg_time
-        
         if deleted:
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
-        
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
@@ -387,7 +379,6 @@ def show_chat_thread():
             msg_display = msg_text
             align = "left"
             bg_color = "#FFFFFF"
-        
         st.markdown(
             f"""
             <div style="text-align: {align};">
@@ -399,7 +390,6 @@ def show_chat_thread():
             """,
             unsafe_allow_html=True
         )
-        
         if "image" in data and data["image"]:
             img_data = base64.b64encode(data["image"]).decode("utf-8")
             st.markdown(
@@ -430,41 +420,6 @@ def show_chat_thread():
                     st.session_state.pending_delete_msg_id = None
                     st.rerun()
     
-    st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        <script>
-        const el = document.getElementById('latest_message');
-        if(el){
-             el.scrollIntoView({behavior: 'smooth'});
-        }
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
-    if st.session_state.is_authenticated:
-        with st.expander("返信する", expanded=False):
-            with st.form("reply_form_student", clear_on_submit=True):
-                reply_text = st.text_area("メッセージを入力", key="reply_text")
-                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
-                submitted = st.form_submit_button("送信")
-                if submitted:
-                    processed_reply = process_image(reply_image) if reply_image is not None else None
-                    if not reply_text.strip() and not reply_image:
-                        st.error("少なくともメッセージか画像を投稿してください。")
-                    else:
-                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                        db.collection("questions").add({
-                            "title": selected_title,
-                            "question": reply_text.strip(),
-                            "image": processed_reply,
-                            "timestamp": time_str,
-                            "deleted": 0,
-                            "poster": first_question_poster
-                        })
-                        st.cache_resource.clear()
-                        st.success("返信を送信しました！")
-                        st.rerun()
     # リアルタイム更新コンポーネントで自動再描画
     rt_value = realtime_update_component()
     if rt_value == "update":

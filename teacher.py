@@ -43,8 +43,13 @@ def realtime_update_component():
           var firebaseConfig = {firebase_config_js};
           firebase.initializeApp(firebaseConfig);
           var db = firebase.firestore();
+          var firstSnapshot = true;
           db.collection("questions").onSnapshot(function(snapshot) {{
-              window.parent.postMessage({{isStreamlitMessage: true, type: "streamlit:setComponentValue", value: "update"}}, "*");
+              if(firstSnapshot) {{
+                  firstSnapshot = false;
+              }} else {{
+                  window.parent.postMessage({{isStreamlitMessage: true, type: "streamlit:setComponentValue", value: "update"}}, "*");
+              }}
           }});
         </script>
       </body>
@@ -56,11 +61,6 @@ def realtime_update_component():
 # OpenCVを利用した画像圧縮処理
 # ===============================
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
-    """
-    ファイルポインタを先頭に戻し、画像ファイルを OpenCV で読み込みます。
-    横幅が max_width を超える場合はリサイズし、JPEG 圧縮を行います。
-    品質を下げながら1MB以下に収める処理を行います。
-    """
     try:
         image_file.seek(0)
         file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
@@ -68,18 +68,15 @@ def process_image(image_file, max_size=1000000, max_width=800, initial_quality=9
     except Exception as e:
         st.error("画像の読み込みに失敗しました。")
         return None
-
     if img is None:
         st.error("画像のデコードに失敗しました。")
         return None
-
     height, width, _ = img.shape
     if width > max_width:
         ratio = max_width / width
         new_width = max_width
         new_height = int(height * ratio)
         img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-
     quality = initial_quality
     while quality >= 10:
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
@@ -215,7 +212,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 
-                # タイトル削除確認フォーム（対象タイトル直下に表示）
+                # タイトル削除確認フォーム
                 if st.session_state.pending_delete_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の削除確認")
@@ -336,4 +333,30 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 教師側は自分の投稿（[先生]で始ま
+        # 教師側は自分の投稿（[先生]で始まる）に対して削除ボタンを表示
+        if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and msg_text.startswith("[先生]"):
+            if st.button("🗑", key=f"del_{doc.id}"):
+                st.session_state.pending_delete_msg_id = doc.id
+                st.rerun()
+            if st.session_state.get("pending_delete_msg_id") == doc.id:
+                st.warning("本当にこの投稿を削除しますか？")
+                confirm_col1, confirm_col2 = st.columns(2)
+                if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
+                    d_ref = db.collection("questions").document(doc.id)
+                    d_ref.update({"deleted": 1})
+                    st.session_state.pending_delete_msg_id = None
+                    st.cache_resource.clear()
+                    st.rerun()
+                if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
+                    st.session_state.pending_delete_msg_id = None
+                    st.rerun()
+    
+    # リアルタイム更新コンポーネントで自動再描画
+    rt_value = realtime_update_component()
+    if rt_value == "update":
+        st.experimental_rerun()
+
+if st.session_state.selected_title is None:
+    show_title_list()
+else:
+    show_chat_thread()
