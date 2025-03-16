@@ -235,10 +235,10 @@ def show_title_list():
                     elif cancel_del:
                         st.session_state.pending_delete_title = None
                         st.rerun()
-# タイトル一覧全体の更新ボタンを追加
-if st.button("更新", key="teacher_title_update"):
-    st.cache_resource.clear()
-    st.rerun()
+    # タイトル一覧全体の更新ボタンを追加
+    if st.button("更新", key="teacher_title_update"):
+        st.cache_resource.clear()
+        st.rerun()
 
 # ===============================
 # 質問詳細（チャットスレッド）の表示（教師用）
