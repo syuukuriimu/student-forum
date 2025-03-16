@@ -281,14 +281,17 @@ def show_title_list():
                                 st.success("タイトルを削除しました。")
                                 
                                 # ★★ 追加処理 ★★
-                                # 同一タイトルについて、教師側の削除システムメッセージが存在するかチェック
+                                # 対象タイトルについて、両側の削除システムメッセージが存在するかチェック
                                 docs_for_title = fetch_questions_by_title(title)
+                                student_deleted = any(
+                                    doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")
+                                    for doc in docs_for_title
+                                )
                                 teacher_deleted = any(
                                     doc.to_dict().get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました")
                                     for doc in docs_for_title
                                 )
-                                if teacher_deleted:
-                                    # 両側が削除済みなので、全ドキュメントを完全削除
+                                if student_deleted and teacher_deleted:
                                     for doc in docs_for_title:
                                         db.collection("questions").document(doc.id).delete()
                                     st.success("両者による削除が確認されたため、データベースから完全に削除しました。")
@@ -380,6 +383,7 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
+        # 生徒側は自分の投稿（生徒側投稿は [先生] 以外）に対して削除ボタンを表示
         if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and not msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
