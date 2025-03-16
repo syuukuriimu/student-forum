@@ -419,7 +419,53 @@ def show_chat_thread():
                 if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
                     st.session_state.pending_delete_msg_id = None
                     st.rerun()
+    st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <script>
+        const el = document.getElementById('latest_message');
+        if(el){
+             el.scrollIntoView({behavior: 'smooth'});
+        }
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
+    st.write("---")
+    if st.button("更新", key="chat_update"):
+        st.cache_resource.clear()
+        st.rerun()
     
+    if st.session_state.is_authenticated:
+        with st.expander("返信する", expanded=False):
+            with st.form("reply_form_student", clear_on_submit=True):
+                reply_text = st.text_area("メッセージを入力", key="reply_text")
+                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
+                submitted = st.form_submit_button("送信")
+                if submitted:
+                    processed_reply = process_image(reply_image) if reply_image is not None else None
+                    if not reply_text.strip() and not reply_image:
+                        st.error("少なくともメッセージか画像を投稿してください。")
+                    else:
+                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                        db.collection("questions").add({
+                            "title": selected_title,
+                            "question": reply_text.strip(),
+                            "image": processed_reply,
+                            "timestamp": time_str,
+                            "deleted": 0,
+                            "poster": first_question_poster
+                        })
+                        st.cache_resource.clear()
+                        st.success("返信を送信しました！")
+                        st.rerun()
+    else:
+        st.info("認証されていないため、返信はできません。")
+    
+    if st.button("戻る", key="chat_back"):
+        st.session_state.selected_title = None
+        st.rerun()
+
     # リアルタイム更新コンポーネントで自動再描画
     rt_value = realtime_update_component()
     if rt_value == "update":
