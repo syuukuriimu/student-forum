@@ -8,7 +8,6 @@ import ast
 import cv2
 import numpy as np
 
-
 # ===============================
 # OpenCVを利用した画像圧縮処理
 # ===============================
@@ -50,22 +49,6 @@ def process_image(image_file, max_size=1000000, max_width=800, initial_quality=9
         quality -= 5
     st.error("画像の圧縮に失敗しました。")
     return None
-
-# ===============================
-# Firestore 初期化
-# ===============================
-if not firebase_admin._apps:
-    try:
-        firebase_creds = st.secrets["firebase"]
-        if isinstance(firebase_creds, str):
-            firebase_creds = ast.literal_eval(firebase_creds)
-        elif not isinstance(firebase_creds, dict):
-            firebase_creds = dict(firebase_creds)
-        cred = credentials.Certificate(firebase_creds)
-    except KeyError:
-        cred = credentials.Certificate("serviceAccountKey.json")
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
 
 # ===============================
 # Firestore 初期化
@@ -268,19 +251,18 @@ def show_title_list():
                         st.rerun()
                 
                 # 削除確認フォームの表示（タイトル削除用、余白なし）
-                if st.session_state.pending_delete_title == title:
-                    st.markdown("---")
-                    st.subheader(f"{title} の削除確認")
-                    st.write("このタイトルを削除するには認証キーが必要です。")
-                    with st.form(key=f"delete_form_{idx}"):
-                        input_del_auth = st.text_input("認証キーを入力", type="password")
-                        submit_del = st.form_submit_button("削除する")
-                        cancel_del = st.form_submit_button("キャンセル")
-                    if submit_del:
+                if st.session_state.pending_delete_title:
+                    title = st.session_state.pending_delete_title
+                    st.warning("このタイトルを削除するには認証キーを入力してください。")
+                    with st.form("delete_title_form"):
+                        delete_auth_key = st.text_input("認証キー", type="password")
+                        delete_submit = st.form_submit_button("削除する")
+                    if delete_submit:
                         docs = fetch_questions_by_title(title)
                         if docs:
                             stored_auth_key = docs[0].to_dict().get("auth_key", "")
-                            if input_del_auth == stored_auth_key:
+                            if delete_auth_key == stored_auth_key:
+                                st.session_state.pending_delete_title = None
                                 st.session_state.deleted_titles_student.append(title)
                                 time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
                                 poster_name = title_info.get(title, {}).get("poster", "匿名")
@@ -294,18 +276,28 @@ def show_title_list():
                                     "auth_key": title_info.get(title, {}).get("auth_key", "")
                                 })
                                 st.success("タイトルを削除しました。")
-                                st.session_state.pending_delete_title = None
+                                # 両側で削除された場合は完全にDBから削除
+                                teacher_msgs = list(
+                                    db.collection("questions")
+                                    .where("title", "==", title)
+                                    .where("question", "==", "[SYSTEM]先生は質問フォームを削除しました")
+                                    .stream()
+                                )
+                                if teacher_msgs:
+                                    docs_to_delete = list(db.collection("questions").where("title", "==", title).stream())
+                                    for d in docs_to_delete:
+                                        d.reference.delete()
                                 st.cache_resource.clear()
                                 st.rerun()
                             else:
                                 st.error("認証キーが正しくありません。")
-                    elif cancel_del:
+                    if st.button("キャンセル", key="del_confirm_no"):
                         st.session_state.pending_delete_title = None
                         st.rerun()
-        # タイトル一覧全体の更新ボタンを追加
-        if st.button("更新", key="title_update"):
-            st.cache_resource.clear()
-            st.rerun()
+                
+                if st.button("更新", key="title_update"):
+                    st.cache_resource.clear()
+                    st.rerun()
 
 #####################################
 # 質問詳細（チャットスレッド）の表示（生徒側）
