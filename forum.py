@@ -8,6 +8,20 @@ import ast
 import cv2
 import numpy as np
 
+# ---------- CSS 注入：Expander ヘッダーの背景色を水色に設定 ----------
+st.markdown(
+    """
+    <style>
+    /* Expander ヘッダー部分 */
+    [data-baseweb="accordion"] > div[role="button"] {
+        background-color: #E6F7FF !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ---------- 生徒ログイン ----------
 if "student_authenticated" not in st.session_state:
     st.session_state.student_authenticated = False
 
@@ -22,9 +36,7 @@ if not st.session_state.student_authenticated:
             st.error("パスワードが違います。")
     st.stop()
 
-# ===============================
-# OpenCVを利用した画像圧縮処理
-# ===============================
+# ---------- OpenCV を利用した画像圧縮処理 ----------
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
     try:
         image_file.seek(0)
@@ -59,9 +71,7 @@ def process_image(image_file, max_size=1000000, max_width=800, initial_quality=9
     st.error("画像の圧縮に失敗しました。")
     return None
 
-# ===============================
-# Firestore 初期化
-# ===============================
+# ---------- Firestore 初期化 ----------
 if not firebase_admin._apps:
     try:
         firebase_creds = st.secrets["firebase"]
@@ -75,9 +85,7 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ===============================
-# キャッシュを用いた Firestore アクセス（TTL 10秒）
-# ===============================
+# ---------- キャッシュ付き Firestore アクセス（TTL 10秒）----------
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
     return list(
@@ -95,9 +103,7 @@ def fetch_questions_by_title(title):
         .stream()
     )
 
-# ===============================
-# Session State の初期化
-# ===============================
+# ---------- Session State の初期化 ----------
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
 if "pending_auth_title" not in st.session_state:
@@ -133,7 +139,7 @@ def show_new_question_form():
                 st.caption("認証キーは返信やタイトル削除等に必要です。")
                 submitted = st.form_submit_button("投稿")
             st.markdown("</div>", unsafe_allow_html=True)
-            
+
             if submitted:
                 existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                                    if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
@@ -324,6 +330,21 @@ def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
     
+    # ---------- CSS 注入：質問詳細全体の背景を水色に変更 ----------
+    st.markdown(
+        """
+        <style>
+        /* .block-container は Streamlit の主要コンテナを対象とします */
+        .block-container {
+            background-color: #ADD8E6;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
     docs = fetch_questions_by_title(selected_title)
     
     first_question_poster = "匿名"
@@ -356,17 +377,16 @@ def show_chat_thread():
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
         
-        # 生徒投稿（[先生]以外）は右寄せ、背景色は緑（従来の #DCF8C6）
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
-            align = "left"   # 先生は左寄せ
-            bg_color = "#FFFFFF"
+            align = "left"
+            bg_color = "#FFFFFF"  # 先生のチャット枠は従来の白背景
         else:
             sender = poster
             msg_display = msg_text
-            align = "right"  # 生徒は右寄せ
-            bg_color = "#DCF8C6"
+            align = "right"
+            bg_color = "#DCF8C6"  # 生徒のチャット枠は従来の緑背景
         
         st.markdown(
             f"""
@@ -385,7 +405,6 @@ def show_chat_thread():
             """,
             unsafe_allow_html=True
         )
-        
         if "image" in data and data["image"]:
             img_data = base64.b64encode(data["image"]).decode("utf-8")
             st.markdown(

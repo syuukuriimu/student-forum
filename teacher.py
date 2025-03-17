@@ -8,6 +8,7 @@ import ast
 import cv2
 import numpy as np
 
+# ---------- 教師ログイン ----------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if not st.session_state.authenticated:
@@ -22,9 +23,7 @@ if not st.session_state.authenticated:
             st.error("パスワードが違います。")
     st.stop()
 
-# ===============================
-# OpenCVを利用した画像圧縮処理
-# ===============================
+# ---------- OpenCV を利用した画像圧縮処理 ----------
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
     try:
         image_file.seek(0)
@@ -59,9 +58,7 @@ def process_image(image_file, max_size=1000000, max_width=800, initial_quality=9
     st.error("画像の圧縮に失敗しました。")
     return None
 
-# ===============================
-# Firestore 初期化
-# ===============================
+# ---------- Firestore 初期化 ----------
 if not firebase_admin._apps:
     try:
         firebase_creds = st.secrets["firebase"]
@@ -75,9 +72,7 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ===============================
-# キャッシュ付き Firestore アクセス（TTL 10秒）
-# ===============================
+# ---------- キャッシュ付き Firestore アクセス（TTL 10秒）----------
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
     return list(
@@ -95,9 +90,7 @@ def fetch_questions_by_title(title):
         .stream()
     )
 
-# ===============================
-# Session State の初期化（教師用）
-# ===============================
+# ---------- Session State の初期化（教師用）----------
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
 if "pending_delete_title" not in st.session_state:
@@ -236,6 +229,20 @@ def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
     
+    # ---------- CSS 注入：質問詳細全体の背景を水色に変更 ----------
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            background-color: #ADD8E6;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
     docs = fetch_questions_by_title(selected_title)
     
     first_question_poster = "匿名"
@@ -277,7 +284,7 @@ def show_chat_thread():
             sender = poster
             msg_display = msg_text
             align = "right"
-            bg_color = "#DCF8C6"  # 生徒のチャット枠は緑色（従来）
+            bg_color = "#DCF8C6"  # 生徒のチャット枠は緑背景（従来）
         
         st.markdown(
             f"""
