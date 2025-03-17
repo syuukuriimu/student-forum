@@ -9,23 +9,6 @@ import cv2
 import numpy as np
 
 #############################################
-# CSS のインジェクション（＜div＞は使わず、expander内容とセクションのスタイル設定）
-#############################################
-st.markdown(
-    """
-    <style>
-    /* 新規質問フォームの expander 内容部分の背景設定 */
-    [data-baseweb="accordion"] > div:nth-child(2) {
-       background-color: #CCFFCC !important;
-       padding: 20px;
-       border-radius: 10px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-#############################################
 # 生徒ログイン
 #############################################
 if "student_authenticated" not in st.session_state:
@@ -122,10 +105,14 @@ if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 
 #############################################
-# 新規質問投稿フォーム（expander形式・黄緑背景はCSSで適用）
+# 新規質問投稿フォーム（expander形式・＜section＞で黄緑背景）
 #############################################
 def show_new_question_form():
     with st.expander("新規質問を投稿する", expanded=False):
+        st.markdown(
+            '<section style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">',
+            unsafe_allow_html=True
+        )
         with st.form("new_question_form", clear_on_submit=False):
             new_title = st.text_input("質問のタイトルを入力", key="new_title")
             new_text = st.text_area("質問内容を入力", key="new_text")
@@ -134,6 +121,8 @@ def show_new_question_form():
             auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
+        st.markdown("</section>", unsafe_allow_html=True)
+
     if submitted:
         existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                            if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
@@ -396,11 +385,9 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<p style='margin-bottom: 20px;'></p>", unsafe_allow_html=True)
-    # 返信エリア（更新～戻るボタンまでを＜section＞タグで白背景で囲む）
+    # 返信エリア：更新ボタン～戻るボタンまでを＜section＞タグで囲む
     st.markdown(
-        """
-        <section style="background-color: white; padding: 20px;">
-        """,
+        '<section style="background-color: white; padding: 20px;">',
         unsafe_allow_html=True
     )
     if st.button("更新", key="chat_update"):
