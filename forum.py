@@ -105,12 +105,13 @@ if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 
 #############################################
-# 新規質問投稿フォーム（expander形式・＜section＞で黄緑背景）
+# 新規質問投稿フォーム（折りたたみ式）
 #############################################
 def show_new_question_form():
     with st.expander("新規質問を投稿する", expanded=False):
+        # 背景色付きのヘッダーを＜h3＞タグで表示
         st.markdown(
-            '<section style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">',
+            '<h3 style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">新規質問投稿フォーム</h3>',
             unsafe_allow_html=True
         )
         with st.form("new_question_form", clear_on_submit=False):
@@ -121,8 +122,6 @@ def show_new_question_form():
             auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
-        st.markdown("</section>", unsafe_allow_html=True)
-
     if submitted:
         existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                            if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
@@ -385,43 +384,42 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<p style='margin-bottom: 20px;'></p>", unsafe_allow_html=True)
-    # 返信エリア：更新ボタン～戻るボタンまでを＜section＞タグで囲む
+    # 返信エリアの見出し（白背景）
     st.markdown(
-        '<section style="background-color: white; padding: 20px;">',
+        '<h3 style="background-color: white; padding: 20px;">返信エリア</h3>',
         unsafe_allow_html=True
     )
-    if st.button("更新", key="chat_update"):
+    # 更新ボタン～戻るボタンまでをまとめて配置
+    cols = st.columns(2)
+    if cols[0].button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
-    if st.session_state.is_authenticated:
-        with st.expander("返信する", expanded=False):
-            with st.form("reply_form_student", clear_on_submit=True):
-                reply_text = st.text_area("メッセージを入力", key="reply_text")
-                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
-                submitted = st.form_submit_button("送信")
-                if submitted:
-                    processed_reply = process_image(reply_image) if reply_image is not None else None
-                    if not reply_text.strip() and not reply_image:
-                        st.error("少なくともメッセージか画像を投稿してください。")
-                    else:
-                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                        db.collection("questions").add({
-                            "title": selected_title,
-                            "question": reply_text.strip(),
-                            "image": processed_reply,
-                            "timestamp": time_str,
-                            "deleted": 0,
-                            "poster": first_question_poster
-                        })
-                        st.cache_resource.clear()
-                        st.success("返信を送信しました！")
-                        st.rerun()
-    else:
-        st.info("認証されていないため返信はできません。")
-    if st.button("戻る", key="chat_back"):
+    if cols[1].button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.rerun()
-    st.markdown("</section>", unsafe_allow_html=True)
+    # 返信フォーム（折りたたみ式）
+    with st.expander("返信する", expanded=False):
+        with st.form("reply_form_student", clear_on_submit=True):
+            reply_text = st.text_area("メッセージを入力", key="reply_text")
+            reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
+            submitted = st.form_submit_button("送信")
+            if submitted:
+                processed_reply = process_image(reply_image) if reply_image is not None else None
+                if not reply_text.strip() and not reply_image:
+                    st.error("少なくともメッセージか画像を投稿してください。")
+                else:
+                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                    db.collection("questions").add({
+                        "title": selected_title,
+                        "question": reply_text.strip(),
+                        "image": processed_reply,
+                        "timestamp": time_str,
+                        "deleted": 0,
+                        "poster": first_question_poster
+                    })
+                    st.cache_resource.clear()
+                    st.success("返信を送信しました！")
+                    st.rerun()
 
 if st.session_state.selected_title is None:
     show_title_list()
