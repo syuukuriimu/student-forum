@@ -219,13 +219,16 @@ def show_title_list():
                     st.rerun()
                 if st.session_state.pending_auth_title == title:
                     st.markdown("---")
-                    st.subheader(f"{title} の認証")
                     st.write("この質問にアクセスするには認証キーが必要です。")
                     with st.form(key=f"auth_form_{idx}"):
                         input_auth_key = st.text_input("認証キーを入力", type="password")
-                        submit_auth = st.form_submit_button("認証する")
-                        no_auth = st.form_submit_button("認証しないで閲覧する")
-                        back = st.form_submit_button("戻る")
+                        col1, col2, col3 = st.columns(3)  # 3つのカラムを作成
+                        with col1:
+                            submit_auth = st.form_submit_button("認証する")
+                        with col2:
+                            no_auth = st.form_submit_button("認証しないで閲覧する")
+                        with col3:
+                            back = st.form_submit_button("戻る")
                     if submit_auth:
                         docs = fetch_questions_by_title(title)
                         if docs:
@@ -248,7 +251,6 @@ def show_title_list():
                         st.rerun()
                 if st.session_state.pending_delete_title == title:
                     st.markdown("---")
-                    st.subheader(f"{title} の削除確認")
                     st.write("このタイトルを削除してよろしいですか？")
                     with st.form(key=f"delete_form_{idx}"):
                         input_del_auth = st.text_input("認証キーを入力", type="password")
