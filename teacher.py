@@ -144,9 +144,10 @@ def show_title_list():
             with st.container():
                 title = item["title"]
                 poster = item["poster"]
+                auth_code = item["auth_key"]
                 update_time = item["update"]
                 cols = st.columns([8, 2])
-                label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
+                label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_code})\n最終更新: {update_time}"
                 if cols[0].button(label, key=f"teacher_title_{idx}"):
                     st.session_state.selected_title = title
                     st.rerun()
