@@ -247,7 +247,7 @@ def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
     
-    # 詳細フォーラム全体の背景を水色に設定
+    # 詳細フォーラム全体を水色の背景で囲む
     st.markdown('<div style="background-color: #ADD8E6; padding: 15px; border-radius: 5px;">', unsafe_allow_html=True)
     
     docs = fetch_questions_by_title(selected_title)
@@ -266,7 +266,7 @@ def show_chat_thread():
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if not records:
         st.write("該当する質問が見つかりません。")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)  # 詳細フォーラム背景の閉じタグ（Pythonコメント）
         return
     
     for doc in records:
@@ -375,7 +375,7 @@ def show_chat_thread():
         st.session_state.selected_title = None
         st.rerun()
     
-    st.markdown('</div>', unsafe_allow_html=True)  
+    st.markdown('</div>', unsafe_allow_html=True)  # 詳細フォーラム背景の閉じタグ（Pythonコメント）
 
 if st.session_state.selected_title is None:
     show_title_list()

@@ -21,7 +21,6 @@ if not st.session_state.student_authenticated:
             st.rerun()
         else:
             st.error("パスワードが違います。")
-
     st.stop()
 
 # ===============================
@@ -124,7 +123,7 @@ if "pending_delete_msg_id" not in st.session_state:
 # 新規質問投稿フォーム（生徒側）
 #####################################
 def show_new_question_form():
-    # 新規質問フォームを背景色付きのコンテナで表示
+    # 新規質問フォームを背景色付きのコンテナで表示（背景は水色）
     with st.container():
         st.markdown('<div style="background-color: #E6F7FF; padding: 15px; border-radius: 5px;">', unsafe_allow_html=True)
         st.subheader("新規質問を投稿")
@@ -136,7 +135,7 @@ def show_new_question_form():
             auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)  # 新規投稿フォームの閉じタグ
         
         if submitted:
             existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
@@ -333,7 +332,7 @@ def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
     
-    # 詳細フォーラム全体の背景を水色に設定
+    # 詳細フォーラム全体を水色の背景で囲む（全体の余白も水色）
     st.markdown('<div style="background-color: #ADD8E6; padding: 15px; border-radius: 5px;">', unsafe_allow_html=True)
     
     docs = fetch_questions_by_title(selected_title)
@@ -350,10 +349,9 @@ def show_chat_thread():
             st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
     
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
-    
     if not records:
         st.write("該当する質問が見つかりません。")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)  # 詳細フォーラム背景の閉じタグ（Pythonコメント）
         return
     
     for doc in records:
@@ -366,7 +364,6 @@ def show_chat_thread():
             formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
         except Exception:
             formatted_time = msg_time
-        
         if deleted:
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
@@ -382,7 +379,7 @@ def show_chat_thread():
             align = "right"
             bg_color = "#DCF8C6"
         
-        # チャットメッセージの横幅はテキスト部分を15文字分に設定
+        # チャットメッセージはテキスト部分の横幅を15文字分に設定
         st.markdown(
             f"""
             <div style="text-align: {align};">
@@ -472,7 +469,7 @@ def show_chat_thread():
         st.session_state.selected_title = None
         st.rerun()
     
-    st.markdown('</div>', unsafe_allow_html=True)  
+    st.markdown('</div>', unsafe_allow_html=True)  # 詳細フォーラム背景の閉じタグ（Pythonコメント）
 
 if st.session_state.selected_title is None:
     show_title_list()
