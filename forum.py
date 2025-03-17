@@ -312,7 +312,7 @@ def show_chat_thread():
         """
         <style>
         .block-container {
-            background-color: #D3F7FF;
+            background-color: #e6f7ff;
             padding: 20px;
         }
         </style>
