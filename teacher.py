@@ -155,8 +155,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 if st.session_state.pending_delete_title == title:
-                    st.markdown("---")
-                    st.write("このタイトルを削除してよろしいですか？")
+                    st.write(f"このタイトル「{title}」を削除してよろしいですか？")
                     with st.form(key=f"teacher_delete_form_{idx}"):
                         col1, col2 = st.columns(2)  # 2つのカラムを作成
                         with col1:
@@ -181,7 +180,7 @@ def show_title_list():
                             "poster": poster_name,
                             "auth_key": item["auth_key"]
                         })
-                        st.success("タイトルを削除しました。")
+                        st.success(f"タイトル「{title}」を削除しました。")
                         st.cache_resource.clear()
                         docs_for_title = fetch_questions_by_title(title)
                         student_deleted = any(

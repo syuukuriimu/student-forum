@@ -218,7 +218,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 if st.session_state.pending_auth_title == title:
-                    st.write("この質問にアクセスするには認証キーが必要です。")
+                    st.write(f"この質問「{title}」にアクセスするには認証キーが必要です。")
                     with st.form(key=f"auth_form_{idx}"):
                         input_auth_key = st.text_input("認証キーを入力", type="password")
                         col1, col2, col3 = st.columns(3)  # 3つのカラムを作成
@@ -249,8 +249,7 @@ def show_title_list():
                         st.session_state.pending_auth_title = None
                         st.rerun()
                 if st.session_state.pending_delete_title == title:
-                    st.markdown("---")
-                    st.write("このタイトルを削除してよろしいですか？")
+                    st.write(f"このタイトル「{title}」を削除してよろしいですか？")
                     with st.form(key=f"delete_form_{idx}"):
                         input_del_auth = st.text_input("認証キーを入力", type="password")
                         col1, col2 = st.columns(2)  # 2つのカラムを作成
@@ -275,7 +274,7 @@ def show_title_list():
                                     "poster": poster_name,
                                     "auth_key": title_info.get(title, {}).get("auth_key", "")
                                 })
-                                st.success("タイトルを削除しました。")
+                                st.success(f"タイトル「{title}」を削除しました。")
                                 st.cache_resource.clear()
                                 docs_for_title = fetch_questions_by_title(title)
                                 student_deleted = any(
