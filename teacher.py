@@ -227,14 +227,15 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    st.title(f"質問詳細: {selected_title}")
+    # タイトル部分は、白背景のコンテナで囲む（上部が見切れないように余白も追加）
+    st.markdown(f'<div style="background-color: white; padding: 20px 10px 10px 10px; border-radius: 5px; margin-top: 20px;"><h2>質問詳細: {selected_title}</h2></div>', unsafe_allow_html=True)
     
-    # ---------- CSS 注入：質問詳細全体の背景を水色に変更 ----------
+    # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更 ----------
     st.markdown(
         """
         <style>
         .block-container {
-            background-color: #ADD8E6;
+            background-color: #D3F7FF;
             padding: 20px;
             border-radius: 5px;
         }
@@ -279,12 +280,12 @@ def show_chat_thread():
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
             align = "left"
-            bg_color = "#FFFFFF"  # 先生のチャット枠は白背景（従来）
+            bg_color = "#FFFFFF"  # 先生のチャット枠は従来の白背景
         else:
             sender = poster
             msg_display = msg_text
             align = "right"
-            bg_color = "#DCF8C6"  # 生徒のチャット枠は緑背景（従来）
+            bg_color = "#DCF8C6"  # 生徒のチャット枠は従来の緑背景
         
         st.markdown(
             f"""
@@ -347,11 +348,14 @@ def show_chat_thread():
         unsafe_allow_html=True
     )
     st.write("---")
-    if st.button("更新", key="teacher_chat_update"):
+    if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
+    
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
+            # 返信エリア背景を白に
+            st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
             with st.form("teacher_reply_form", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
@@ -372,6 +376,7 @@ def show_chat_thread():
                         st.cache_resource.clear()
                         st.success("返信を送信しました！")
                         st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
     if st.button("戻る", key="teacher_chat_back"):
         st.session_state.selected_title = None
         st.rerun()

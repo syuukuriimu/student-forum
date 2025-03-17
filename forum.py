@@ -8,13 +8,14 @@ import ast
 import cv2
 import numpy as np
 
-# ---------- CSS 注入：Expander ヘッダーの背景色を水色に設定 ----------
+# ---------- CSS 注入：Expander ヘッダー（新規質問投稿）の背景を薄い緑に変更 ----------
+# ※ 新規質問投稿専用のラッパー div を用いる
 st.markdown(
     """
     <style>
-    /* Expander ヘッダー部分 */
-    [data-baseweb="accordion"] > div[role="button"] {
-        background-color: #E6F7FF !important;
+    /* 新規質問投稿用エリアの expander ヘッダーを対象 */
+    #new_question_expander [data-baseweb="accordion"] > div[role="button"] {
+        background-color: #C8E6C9 !important;
     }
     </style>
     """,
@@ -85,7 +86,7 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ---------- キャッシュ付き Firestore アクセス（TTL 10秒）----------
+# ---------- キャッシュ付き Firestore アクセス（TTL 10秒） ----------
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
     return list(
@@ -123,6 +124,8 @@ if "pending_delete_msg_id" not in st.session_state:
 # 新規質問投稿フォーム（生徒側）
 #####################################
 def show_new_question_form():
+    # ラッパー div に id を付与し、背景色を設定（緑色）
+    st.markdown('<div id="new_question_expander">', unsafe_allow_html=True)
     with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
         with st.container():
             st.markdown(
@@ -139,35 +142,36 @@ def show_new_question_form():
                 st.caption("認証キーは返信やタイトル削除等に必要です。")
                 submitted = st.form_submit_button("投稿")
             st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)  # new_question_expander の閉じタグ
 
-            if submitted:
-                existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
-                                   if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
-                if new_title in existing_titles:
-                    st.error("このタイトルはすでに存在します。")
-                elif not new_title or not new_text:
-                    st.error("タイトルと質問内容は必須です。")
-                elif auth_key == "":
-                    st.error("認証キーは必須入力です。")
-                else:
-                    poster_name = poster_name or "匿名"
-                    time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                    img_data = process_image(new_image) if new_image is not None else None
-                    db.collection("questions").add({
-                        "title": new_title,
-                        "question": new_text,
-                        "image": img_data,
-                        "timestamp": time_str,
-                        "deleted": 0,
-                        "poster": poster_name,
-                        "auth_key": auth_key
-                    })
-                    st.cache_resource.clear()
-                    st.success("質問を投稿しました！")
-                    st.session_state.selected_title = new_title
-                    st.session_state.is_authenticated = True
-                    st.session_state.poster = poster_name
-                    st.rerun()
+    if submitted:
+        existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
+                           if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
+        if new_title in existing_titles:
+            st.error("このタイトルはすでに存在します。")
+        elif not new_title or not new_text:
+            st.error("タイトルと質問内容は必須です。")
+        elif auth_key == "":
+            st.error("認証キーは必須入力です。")
+        else:
+            poster_name = poster_name or "匿名"
+            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+            img_data = process_image(new_image) if new_image is not None else None
+            db.collection("questions").add({
+                "title": new_title,
+                "question": new_text,
+                "image": img_data,
+                "timestamp": time_str,
+                "deleted": 0,
+                "poster": poster_name,
+                "auth_key": auth_key
+            })
+            st.cache_resource.clear()
+            st.success("質問を投稿しました！")
+            st.session_state.selected_title = new_title
+            st.session_state.is_authenticated = True
+            st.session_state.poster = poster_name
+            st.rerun()
 
 #####################################
 # 質問一覧の表示（生徒側）
@@ -328,15 +332,15 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    st.title(f"質問詳細: {selected_title}")
+    # タイトル部分は、白背景で囲む（見やすくする）
+    st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px;"><h2>質問詳細: {selected_title}</h2></div>', unsafe_allow_html=True)
     
-    # ---------- CSS 注入：質問詳細全体の背景を水色に変更 ----------
+    # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更 ----------
     st.markdown(
         """
         <style>
-        /* .block-container は Streamlit の主要コンテナを対象とします */
         .block-container {
-            background-color: #ADD8E6;
+            background-color: #D3F7FF;
             padding: 20px;
             border-radius: 5px;
         }
@@ -381,12 +385,12 @@ def show_chat_thread():
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
             align = "left"
-            bg_color = "#FFFFFF"  # 先生のチャット枠は従来の白背景
+            bg_color = "#FFFFFF"  # 先生のチャット枠は白背景（従来）
         else:
             sender = poster
             msg_display = msg_text
             align = "right"
-            bg_color = "#DCF8C6"  # 生徒のチャット枠は従来の緑背景
+            bg_color = "#DCF8C6"  # 生徒のチャット枠は緑背景（従来）
         
         st.markdown(
             f"""
@@ -418,6 +422,10 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+        
+        # 返信不可時のメッセージ背景を白に
+        if not st.session_state.is_authenticated:
+            st.markdown('<div style="background-color: white; padding: 5px; border-radius: 5px;">認証されていないため、返信はできません。</div>', unsafe_allow_html=True)
         
         if st.session_state.is_authenticated and not msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
@@ -455,6 +463,8 @@ def show_chat_thread():
     
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
+            # 返信エリアの背景を白に
+            st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
             with st.form("reply_form_student", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力", key="reply_text")
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
@@ -476,6 +486,7 @@ def show_chat_thread():
                         st.cache_resource.clear()
                         st.success("返信を送信しました！")
                         st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.info("認証されていないため、返信はできません。")
     
