@@ -411,7 +411,7 @@ def show_chat_thread():
         <style>
         .custom-container {
             background-color: white;
-            padding: 100px;
+            padding: 20px;
             width: 100%; /* 幅を指定 */
             margin-top: 100px;  
         }
