@@ -316,7 +316,7 @@ def show_chat_thread():
             padding: 20px;
         }
         div[data-testid="stVerticalBlock"] {
-        background-color: white; /* 薄いオレンジ */
+        background-color: white;
         padding: 20px;
         border-radius: 10px;
         }
@@ -394,7 +394,7 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
      # 背景を変えたい範囲の開始
-    with st.container():
+   
         if st.button("更新", key="chat_update"):
             st.cache_resource.clear()
             st.rerun()
