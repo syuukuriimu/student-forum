@@ -387,6 +387,37 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+        
+                # 生徒側は自分の投稿（[先生]以外）に対して削除ボタンを表示
+        if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and not msg_text.startswith("[先生]"):
+            if st.button("🗑", key=f"del_{doc.id}"):
+                st.session_state.pending_delete_msg_id = doc.id
+                st.rerun()
+            if st.session_state.get("pending_delete_msg_id") == doc.id:
+                st.warning("本当にこの投稿を削除しますか？")
+                confirm_col1, confirm_col2 = st.columns(2)
+                if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
+                    d_ref = db.collection("questions").document(doc.id)
+                    d_ref.update({"deleted": 1})
+                    st.session_state.pending_delete_msg_id = None
+                    st.cache_resource.clear()
+                    st.rerun()
+                if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
+                    st.session_state.pending_delete_msg_id = None
+                    st.rerun()
+    
+    st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <script>
+        const el = document.getElementById('latest_message');
+        if(el){
+             el.scrollIntoView({behavior: 'smooth'});
+        }
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
     
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
