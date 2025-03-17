@@ -8,9 +8,6 @@ import ast
 import cv2
 import numpy as np
 
-# ===============================
-# 教師ログイン（初期認証）
-# ===============================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if not st.session_state.authenticated:
@@ -29,11 +26,6 @@ if not st.session_state.authenticated:
 # OpenCVを利用した画像圧縮処理
 # ===============================
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
-    """
-    ファイルポインタを先頭に戻し、画像ファイルを OpenCV で読み込みます。
-    横幅が max_width を超える場合はリサイズし、cv2.imencode() で JPEG 圧縮を行います。
-    品質を下げながら1MB以下に収める処理を行います。
-    """
     try:
         image_file.seek(0)
         file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
@@ -115,9 +107,9 @@ if "deleted_titles_teacher" not in st.session_state:
 if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 
-# ===============================
+#####################################
 # 質問一覧の表示（教師用）
-# ===============================
+#####################################
 def show_title_list():
     st.title("📖 質問フォーラム（教師用）")
     st.subheader("質問一覧")
@@ -244,144 +236,138 @@ def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
     
-    with st.container():
+    docs = fetch_questions_by_title(selected_title)
+    
+    first_question_poster = "匿名"
+    if docs:
+        first_question = docs[0].to_dict()
+        first_question_poster = first_question.get("poster", "匿名")
+    
+    sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
+    if sys_msgs:
+        for sys_msg in sys_msgs:
+            text = sys_msg.get("question", "")[8:]
+            st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
+    
+    records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
+    if not records:
+        st.write("該当する質問が見つかりません。")
+        return
+    
+    for doc in records:
+        data = doc.to_dict()
+        msg_text = data.get("question", "")
+        msg_time = data.get("timestamp", "")
+        poster = data.get("poster") or "匿名"
+        deleted = data.get("deleted", 0)
+        try:
+            formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            formatted_time = msg_time
+        if deleted:
+            st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
+            continue
+        
+        if msg_text.startswith("[先生]"):
+            sender = "先生"
+            msg_display = msg_text[len("[先生]"):].strip()
+            align = "left"
+            bg_color = "#FFFFFF"  # 先生のチャット枠は白背景（従来）
+        else:
+            sender = poster
+            msg_display = msg_text
+            align = "right"
+            bg_color = "#DCF8C6"  # 生徒のチャット枠は緑色（従来）
+        
         st.markdown(
-            """
-            <style>
-            .chat-thread-container {
-                background-color: #ADD8E6;
-                padding: 15px;
-                border-radius: 5px;
-            }
-            </style>
-            <div class="chat-thread-container">
-            """, unsafe_allow_html=True
-        )
-        
-        docs = fetch_questions_by_title(selected_title)
-        first_question_poster = "匿名"
-        if docs:
-            first_question = docs[0].to_dict()
-            first_question_poster = first_question.get("poster", "匿名")
-        
-        sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
-        if sys_msgs:
-            for sys_msg in sys_msgs:
-                text = sys_msg.get("question", "")[8:]
-                st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
-        
-        records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
-        if not records:
-            st.write("該当する質問が見つかりません。")
-            st.markdown("</div>", unsafe_allow_html=True)
-            return
-        
-        for doc in records:
-            data = doc.to_dict()
-            msg_text = data.get("question", "")
-            msg_time = data.get("timestamp", "")
-            poster = data.get("poster") or "匿名"
-            deleted = data.get("deleted", 0)
-            try:
-                formatted_time = datetime.strptime(msg_time, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
-            except Exception:
-                formatted_time = msg_time
-            if deleted:
-                st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
-                continue
-            if msg_text.startswith("[先生]"):
-                sender = "先生"
-                msg_display = msg_text[len("[先生]"):].strip()
-                align = "right"
-                bg_color = "#DCF8C6"
-            else:
-                sender = poster
-                msg_display = msg_text
-                align = "left"
-                bg_color = "#FFFFFF"
-            st.markdown(
-                f"""
-                <div style="text-align: {align};">
-                  <div style="display: inline-block; background-color: {bg_color}; padding: 10px; border-radius: 10px; max-width: 15ch;">
-                    <b>{sender}:</b> {msg_display}<br>
-                    <small>({formatted_time})</small>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            if "image" in data and data["image"]:
-                img_data = base64.b64encode(data["image"]).decode("utf-8")
-                st.markdown(
-                    f'''
-                    <div style="text-align: {align}; margin-bottom: 15px;">
-                        <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
-                    </div>
-                    ''',
-                    unsafe_allow_html=True
-                )
-            st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-            
-            if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and not msg_text.startswith("[先生]"):
-                if st.button("🗑", key=f"del_{doc.id}"):
-                    st.session_state.pending_delete_msg_id = doc.id
-                    st.rerun()
-                if st.session_state.get("pending_delete_msg_id") == doc.id:
-                    st.warning("本当にこの投稿を削除しますか？")
-                    confirm_col1, confirm_col2 = st.columns(2)
-                    if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
-                        d_ref = db.collection("questions").document(doc.id)
-                        d_ref.update({"deleted": 1})
-                        st.session_state.pending_delete_msg_id = None
-                        st.cache_resource.clear()
-                        st.rerun()
-                    if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
-                        st.session_state.pending_delete_msg_id = None
-                        st.rerun()
-        
-        st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
-        st.markdown(
-            """
-            <script>
-            const el = document.getElementById('latest_message');
-            if(el){
-                 el.scrollIntoView({behavior: 'smooth'});
-            }
-            </script>
+            f"""
+            <div style="text-align: {align}; margin-bottom: 15px;">
+              <div style="
+                  display: inline-block;
+                  background-color: {bg_color};
+                  padding: 10px;
+                  border-radius: 10px;
+                  max-width: 80%;
+                  word-wrap: break-word;">
+                <b>{sender}:</b> {msg_display}<br>
+                <small>({formatted_time})</small>
+              </div>
+            </div>
             """,
             unsafe_allow_html=True
         )
-        st.write("---")
-        if st.button("更新", key="teacher_chat_update"):
-            st.cache_resource.clear()
-            st.rerun()
-        if st.session_state.is_authenticated:
-            with st.expander("返信する", expanded=False):
-                with st.form("teacher_reply_form", clear_on_submit=True):
-                    reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
-                    reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
-                    submitted = st.form_submit_button("送信")
-                    if submitted:
-                        processed_reply = process_image(reply_image) if reply_image is not None else None
-                        if not reply_text.strip() and not reply_image:
-                            st.error("少なくともメッセージか画像を投稿してください。")
-                        else:
-                            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                            db.collection("questions").add({
-                                "title": selected_title,
-                                "question": "[先生] " + reply_text.strip(),
-                                "image": processed_reply,
-                                "timestamp": time_str,
-                                "deleted": 0,   
-                            })
-                            st.cache_resource.clear()
-                            st.success("返信を送信しました！")
-                            st.rerun()
-        if st.button("戻る", key="teacher_chat_back"):
-            st.session_state.selected_title = None
-            st.rerun()
+        if "image" in data and data["image"]:
+            img_data = base64.b64encode(data["image"]).decode("utf-8")
+            st.markdown(
+                f'''
+                <div style="text-align: {align}; margin-bottom: 15px;">
+                    <div style="background-color: #FFFFFF; display: inline-block; border-radius: 10px;">
+                        <img src="data:image/png;base64,{img_data}" style="max-width: 80%; height:auto;">
+                    </div>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        st.markdown("</div>", unsafe_allow_html=True)  # chat-thread-container の閉じタグ
+        if st.session_state.is_authenticated and not msg_text.startswith("[先生]"):
+            if st.button("🗑", key=f"del_{doc.id}"):
+                st.session_state.pending_delete_msg_id = doc.id
+                st.rerun()
+            if st.session_state.get("pending_delete_msg_id") == doc.id:
+                st.warning("本当にこの投稿を削除しますか？")
+                confirm_col1, confirm_col2 = st.columns(2)
+                if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
+                    d_ref = db.collection("questions").document(doc.id)
+                    d_ref.update({"deleted": 1})
+                    st.session_state.pending_delete_msg_id = None
+                    st.cache_resource.clear()
+                    st.rerun()
+                if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
+                    st.session_state.pending_delete_msg_id = None
+                    st.rerun()
+    
+    st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <script>
+        const el = document.getElementById('latest_message');
+        if(el){
+             el.scrollIntoView({behavior: 'smooth'});
+        }
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
+    st.write("---")
+    if st.button("更新", key="teacher_chat_update"):
+        st.cache_resource.clear()
+        st.rerun()
+    if st.session_state.is_authenticated:
+        with st.expander("返信する", expanded=False):
+            with st.form("teacher_reply_form", clear_on_submit=True):
+                reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
+                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
+                submitted = st.form_submit_button("送信")
+                if submitted:
+                    processed_reply = process_image(reply_image) if reply_image is not None else None
+                    if not reply_text.strip() and not reply_image:
+                        st.error("少なくともメッセージか画像を投稿してください。")
+                    else:
+                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                        db.collection("questions").add({
+                            "title": selected_title,
+                            "question": "[先生] " + reply_text.strip(),
+                            "image": processed_reply,
+                            "timestamp": time_str,
+                            "deleted": 0,
+                        })
+                        st.cache_resource.clear()
+                        st.success("返信を送信しました！")
+                        st.rerun()
+    if st.button("戻る", key="teacher_chat_back"):
+        st.session_state.selected_title = None
+        st.rerun()
 
 if st.session_state.selected_title is None:
     show_title_list()
