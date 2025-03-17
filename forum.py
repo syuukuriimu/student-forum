@@ -218,7 +218,6 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 if st.session_state.pending_auth_title == title:
-                    st.markdown("---")
                     st.write("この質問にアクセスするには認証キーが必要です。")
                     with st.form(key=f"auth_form_{idx}"):
                         input_auth_key = st.text_input("認証キーを入力", type="password")
