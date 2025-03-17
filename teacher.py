@@ -153,10 +153,10 @@ def show_title_list():
             with st.container():
                 title = item["title"]
                 poster = item["poster"]
-                auth_code = item["auth_key"]
+                auth_code = item["auth_code"] if "auth_code" in item else item["auth_key"]
                 update_time = item["update"]
                 cols = st.columns([8, 2])
-                label = f"{title}\n(投稿者: {poster}, 認証コード: {auth_code})\n最終更新: {update_time}"
+                label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
                 if cols[0].button(label, key=f"teacher_title_{idx}"):
                     st.session_state.selected_title = title
                     st.rerun()
@@ -186,7 +186,7 @@ def show_title_list():
                             "deleted": 0,
                             "image": None,
                             "poster": poster_name,
-                            "auth_key": auth_code
+                            "auth_key": item["auth_key"]
                         })
                         st.success("タイトルを削除しました。")
                         st.cache_resource.clear()
@@ -217,7 +217,7 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    # タイトル部分：forum.py と同様に、白背景のコンテナを下に配置して余白を確保
+    # タイトル部分：forum.py と同様、白背景コンテナで下部に十分余白を確保
     st.markdown(
         f'<div style="background-color: white; padding: 10px; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
         unsafe_allow_html=True
@@ -292,23 +292,21 @@ def show_chat_thread():
             img_data = base64.b64encode(data["image"]).decode("utf-8")
             st.markdown(
                 f'''
-                <div style="text-align: {align}; margin-bottom: 15px;">
-                    <div style="background-color: #FFFFFF; display: inline-block; border-radius: 10px;">
-                        <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto;">
-                    </div>
+                <div style="text-align: {align}; margin-bottom: 15px; background-color: #D3F7FF; padding: 0;">
+                    <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto; display: block; margin: auto;">
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-    # 操作エリア全体（返信、更新、戻る）：白背景で統一（block-container の影響を除外）
-    st.markdown('<div style="background-color: white !important; padding: 20px; border-radius: 5px; margin-top: 20px;">', unsafe_allow_html=True)
+    # 操作エリア全体：白背景、横幅100%、最新投稿から約2行分の余白を確保
+    st.markdown('<div style="background-color: white; width: 100%; padding: 20px; margin-top: 20px;">', unsafe_allow_html=True)
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
-            st.markdown('<div style="background-color: white !important; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
+            st.markdown('<div style="background-color: white; width: 100%; padding: 10px;">', unsafe_allow_html=True)
             with st.form("teacher_reply_form", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
