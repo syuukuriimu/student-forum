@@ -297,7 +297,6 @@ def show_chat_thread():
         st.rerun()
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
-            st.markdown('<div style="background-color: white; width: 100%; padding: 10px;">', unsafe_allow_html=True)
             with st.form("teacher_reply_form", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
@@ -318,7 +317,6 @@ def show_chat_thread():
                         st.cache_resource.clear()
                         st.success("返信を送信しました！")
                         st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
    
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
