@@ -405,7 +405,7 @@ def show_chat_thread():
         st.markdown('<div class="chat-container">', unsafe_allow_html=True)  # ✅ 背景を変えたい範囲の開始
 
         with st.container():
-            if st.button("更新", key="chat_update"):
+            if st.button("更新", key=f"chat_update_{st.session_state.selected_title}"):
                 st.cache_resource.clear()
                 st.rerun()
 
