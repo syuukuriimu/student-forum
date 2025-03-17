@@ -155,7 +155,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 if st.session_state.pending_delete_title == title:
-                    st.write(f"このタイトル「{title}」を削除してよろしいですか？")
+                    st.warning(f"このタイトル「{title}」を削除してよろしいですか？")
                     with st.form(key=f"teacher_delete_form_{idx}"):
                         col1, col2 = st.columns(2)  # 2つのカラムを作成
                         with col1:
