@@ -9,6 +9,23 @@ import cv2
 import numpy as np
 
 #############################################
+# CSS のインジェクション（＜div＞は使わず、expander内容とセクションのスタイル設定）
+#############################################
+st.markdown(
+    """
+    <style>
+    /* 新規質問フォームの expander 内容部分の背景設定 */
+    [data-baseweb="accordion"] > div:nth-child(2) {
+       background-color: #CCFFCC !important;
+       padding: 20px;
+       border-radius: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+#############################################
 # 生徒ログイン
 #############################################
 if "student_authenticated" not in st.session_state:
@@ -105,15 +122,10 @@ if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 
 #############################################
-# 新規質問投稿フォーム（折りたたみ式・黄緑背景）
+# 新規質問投稿フォーム（expander形式・黄緑背景はCSSで適用）
 #############################################
 def show_new_question_form():
     with st.expander("新規質問を投稿する", expanded=False):
-        # expander 内の全体を黄緑背景で囲む
-        st.markdown(
-            '<div style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">',
-            unsafe_allow_html=True
-        )
         with st.form("new_question_form", clear_on_submit=False):
             new_title = st.text_input("質問のタイトルを入力", key="new_title")
             new_text = st.text_area("質問内容を入力", key="new_text")
@@ -122,8 +134,6 @@ def show_new_question_form():
             auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
-        st.markdown("</div>", unsafe_allow_html=True)
-
     if submitted:
         existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                            if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
@@ -306,7 +316,7 @@ def show_title_list():
 def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.markdown(
-        f'<div style="background-color: white; padding: 20px; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
+        f'<h2 style="background-color: white; padding: 20px; width: fit-content; margin: 40px auto 10px auto;">質問詳細: {selected_title}</h2>',
         unsafe_allow_html=True
     )
     st.markdown(
@@ -345,7 +355,7 @@ def show_chat_thread():
         except Exception:
             formatted_time = msg_time
         if deleted:
-            st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
+            st.markdown("<p style='color: red;'>【投稿が削除されました】</p>", unsafe_allow_html=True)
             continue
         if msg_text.startswith("[先生]"):
             sender = "先生"
@@ -359,8 +369,8 @@ def show_chat_thread():
             bg_color = "#DCF8C6"
         st.markdown(
             f"""
-            <div style="text-align: {align}; margin-bottom: 15px;">
-              <div style="
+            <p style="text-align: {align}; margin-bottom: 15px;">
+              <span style="
                   display: inline-block;
                   background-color: {bg_color};
                   padding: 10px;
@@ -369,8 +379,8 @@ def show_chat_thread():
                   word-wrap: break-word;">
                 <b>{sender}:</b> {msg_display}<br>
                 <small>({formatted_time})</small>
-              </div>
-            </div>
+              </span>
+            </p>
             """,
             unsafe_allow_html=True
         )
@@ -379,48 +389,52 @@ def show_chat_thread():
             align_style = "margin-left: auto;" if align=="right" else "margin-right: auto;"
             st.markdown(
                 f'''
-                <div style="text-align: {align}; margin-bottom: 15px; background-color: #D3F7FF; padding: 0;">
+                <p style="text-align: {align}; margin-bottom: 15px; background-color: #D3F7FF; padding: 0;">
                     <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto; {align_style}">
-                </div>
+                </p>
                 ''',
                 unsafe_allow_html=True
             )
-        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-    # 返信エリア：更新ボタン～戻るボタンまでを白背景で囲む
-    with st.container():
-        st.markdown('<div style="background-color: white; padding: 20px;">', unsafe_allow_html=True)
-        if st.button("更新", key="chat_update"):
-            st.cache_resource.clear()
-            st.rerun()
-        if st.session_state.is_authenticated:
-            with st.expander("返信する", expanded=False):
-                with st.form("reply_form_student", clear_on_submit=True):
-                    reply_text = st.text_area("メッセージを入力", key="reply_text")
-                    reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
-                    submitted = st.form_submit_button("送信")
-                    if submitted:
-                        processed_reply = process_image(reply_image) if reply_image is not None else None
-                        if not reply_text.strip() and not reply_image:
-                            st.error("少なくともメッセージか画像を投稿してください。")
-                        else:
-                            time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                            db.collection("questions").add({
-                                "title": selected_title,
-                                "question": reply_text.strip(),
-                                "image": processed_reply,
-                                "timestamp": time_str,
-                                "deleted": 0,
-                                "poster": first_question_poster
-                            })
-                            st.cache_resource.clear()
-                            st.success("返信を送信しました！")
-                            st.rerun()
-        else:
-            st.info("認証されていないため返信はできません。")
-        if st.button("戻る", key="chat_back"):
-            st.session_state.selected_title = None
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("<p style='margin-bottom: 20px;'></p>", unsafe_allow_html=True)
+    # 返信エリア（更新～戻るボタンまでを＜section＞タグで白背景で囲む）
+    st.markdown(
+        """
+        <section style="background-color: white; padding: 20px;">
+        """,
+        unsafe_allow_html=True
+    )
+    if st.button("更新", key="chat_update"):
+        st.cache_resource.clear()
+        st.rerun()
+    if st.session_state.is_authenticated:
+        with st.expander("返信する", expanded=False):
+            with st.form("reply_form_student", clear_on_submit=True):
+                reply_text = st.text_area("メッセージを入力", key="reply_text")
+                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
+                submitted = st.form_submit_button("送信")
+                if submitted:
+                    processed_reply = process_image(reply_image) if reply_image is not None else None
+                    if not reply_text.strip() and not reply_image:
+                        st.error("少なくともメッセージか画像を投稿してください。")
+                    else:
+                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                        db.collection("questions").add({
+                            "title": selected_title,
+                            "question": reply_text.strip(),
+                            "image": processed_reply,
+                            "timestamp": time_str,
+                            "deleted": 0,
+                            "poster": first_question_poster
+                        })
+                        st.cache_resource.clear()
+                        st.success("返信を送信しました！")
+                        st.rerun()
+    else:
+        st.info("認証されていないため返信はできません。")
+    if st.button("戻る", key="chat_back"):
+        st.session_state.selected_title = None
+        st.rerun()
+    st.markdown("</section>", unsafe_allow_html=True)
 
 if st.session_state.selected_title is None:
     show_title_list()
