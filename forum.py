@@ -108,83 +108,38 @@ if "pending_delete_msg_id" not in st.session_state:
 # 新規質問投稿フォーム（チェックボックスで折りたたみ表示）
 #############################################
 def show_new_question_form():
-    # 初期状態を設定
+        # フォームの開閉状態をセッションで管理
     if "show_form" not in st.session_state:
         st.session_state.show_form = False
 
-    # JavaScriptでボタン風のh3を作成
-    st.markdown("""
-        <h3 id="toggle_button" style="cursor: pointer; background-color: #eaffd0; padding: 10px; border-radius: 10px; text-align: center;">
+    # クリックで開閉するボタン風のh3
+    button_html = """
+        <h3 id="toggle_form" style="
+            cursor: pointer; 
+            background-color: #eaffd0; /* 少し薄い黄緑 */
+            padding: 10px; 
+            border-radius: 10px; 
+            text-align: center;
+            border: 2px solid #cdebb0; /* もう少し濃い枠 */
+            font-size: 20px;
+        ">
             新規質問を作成
         </h3>
         <script>
-            var button = document.getElementById("toggle_button");
-            button.onclick = function() {
-                fetch("/?toggle_form=true");
-                setTimeout(() => location.reload(), 100);
+            document.getElementById("toggle_form").onclick = function() {
+                fetch('/?toggle_form=' + (!window.location.search.includes('toggle_form=true') ? 'true' : 'false'))
+                .then(() => setTimeout(() => location.reload(), 100));
             };
         </script>
-    """, unsafe_allow_html=True)
-
-    # クエリパラメータを取得
-    query_params = st.query_params
-    show_form = query_params.get("toggle_form") == "true"
+    """
+    st.markdown(button_html, unsafe_allow_html=True)
 
     # フォームの開閉状態を管理
-    if "show_form" not in st.session_state:
-        st.session_state.show_form = show_form
+    if st.query_params.get("toggle_form") == "true":
+        st.session_state.show_form = True
+    elif st.query_params.get("toggle_form") == "false":
+        st.session_state.show_form = False
 
-    # JavaScriptでクリックイベントを処理
-    st.markdown("""
-        <script>
-        function toggleForm() {
-            fetch("/?toggle_form=" + (window.location.search.includes("toggle_form=true") ? "false" : "true"))
-            .then(() => setTimeout(() => location.reload(), 100));
-        }
-        </script>
-        """, unsafe_allow_html=True)
-
-    # `<h3>` をクリックするとフォームを開閉
-    st.markdown('<h3 style="cursor:pointer; color:blue;" onclick="toggleForm()">新規質問を作成</h3>', unsafe_allow_html=True)
-
-
-    if st.session_state.show_form:
-        with st.form("new_question_form", clear_on_submit=False):
-            new_title = st.text_input("質問のタイトルを入力", key="new_title")
-            new_text = st.text_area("質問内容を入力", key="new_text")
-            new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
-            poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-            auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
-            st.caption("認証キーは返信やタイトル削除等に必要です。")
-            submitted = st.form_submit_button("投稿")
-        if submitted:
-            existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
-                               if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
-            if new_title in existing_titles:
-                st.error("このタイトルはすでに存在します。")
-            elif not new_title or not new_text:
-                st.error("タイトルと質問内容は必須です。")
-            elif auth_key == "":
-                st.error("認証キーは必須入力です。")
-            else:
-                poster_name = poster_name or "匿名"
-                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                img_data = process_image(new_image) if new_image is not None else None
-                db.collection("questions").add({
-                    "title": new_title,
-                    "question": new_text,
-                    "image": img_data,
-                    "timestamp": time_str,
-                    "deleted": 0,
-                    "poster": poster_name,
-                    "auth_key": auth_key
-                })
-                st.cache_resource.clear()
-                st.success("質問を投稿しました！")
-                st.session_state.selected_title = new_title
-                st.session_state.is_authenticated = True
-                st.session_state.poster = poster_name
-                st.rerun()
 
 #############################################
 # 質問一覧表示
