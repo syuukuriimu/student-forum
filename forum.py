@@ -453,16 +453,11 @@ def show_chat_thread():
             <style>
                 /* エクスパンダーが閉じている状態の背景色 */
                 .streamlit-expanderHeader {
-                    background-color: white;
-                    color: #333333; /* 文字色をダークに */
-                    font-weight: bold; /* 文字を太字に */
-                    padding: 10px; /* パディングを追加 */
-                    border-radius: 10px; /* 角を丸くする */
-                }
-
-                /* エクスパンダーを開いたときの色変更 (任意) */
-                .streamlit-expanderHeader[aria-expanded="true"] {
-                    background-color: #b3ffb3; /* 開いた状態で少し暗い緑色 */
+                    background-color: white !important;
+                    color: #333333 !important; /* 文字色をダークに */
+                    font-weight: bold !important; /* 文字を太字に */
+                    padding: 10px !important; /* パディングを追加 */
+                    border-radius: 10px !important; /* 角を丸くする */
                 }
             </style>
         """, unsafe_allow_html=True)
