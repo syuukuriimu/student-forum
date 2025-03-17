@@ -315,11 +315,6 @@ def show_chat_thread():
             background-color: #D3F7FF;
             padding: 20px;
         }
-        div[data-testid="stVerticalBlock"] {
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        }
         </style>
         """,
         unsafe_allow_html=True
@@ -394,7 +389,18 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
      # 背景を変えたい範囲の開始
-   
+    st.markdown(
+        """
+        div[data-testid="stVerticalBlock"] {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            }
+            </style>
+            """,
+        unsafe_allow_html=True
+    )   
+    with st.container():
         if st.button("更新", key="chat_update"):
             st.cache_resource.clear()
             st.rerun()
