@@ -254,13 +254,13 @@ def show_chat_thread():
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
-            align = "left"
-            bg_color = "#FFFFFF"  # 先生は白背景
+            align = "right"
+            bg_color = "#DCF8C6"  # 先生は緑緑背景
         else:
             sender = poster
             msg_display = msg_text
-            align = "right"
-            bg_color = "#DCF8C6"  # 生徒は緑背景
+            align = "left"
+            bg_color = "#FFFFFF"  # 生徒は白白背景
         st.markdown(
             f"""
             <div style="text-align: {align}; margin-bottom: 15px;">
