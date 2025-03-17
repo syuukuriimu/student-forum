@@ -126,13 +126,27 @@ def show_new_question_form():
         </script>
     """, unsafe_allow_html=True)
 
-    # 初期化
-    if "show_form" not in st.session_state:
-        st.session_state.show_form = False
+    # クエリパラメータを取得
+    query_params = st.query_params
+    show_form = query_params.get("toggle_form") == "true"
 
-    # クリックで開閉
-    if st.button("新規質問を作成"):
-        st.session_state.show_form = not st.session_state.show_form
+    # フォームの開閉状態を管理
+    if "show_form" not in st.session_state:
+        st.session_state.show_form = show_form
+
+    # JavaScriptでクリックイベントを処理
+    st.markdown("""
+        <script>
+        function toggleForm() {
+            fetch("/?toggle_form=" + (window.location.search.includes("toggle_form=true") ? "false" : "true"))
+            .then(() => setTimeout(() => location.reload(), 100));
+        }
+        </script>
+        """, unsafe_allow_html=True)
+
+    # `<h3>` をクリックするとフォームを開閉
+    st.markdown('<h3 style="cursor:pointer; color:blue;" onclick="toggleForm()">新規質問を作成</h3>', unsafe_allow_html=True)
+
 
     if st.session_state.show_form:
         with st.form("new_question_form", clear_on_submit=False):
