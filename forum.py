@@ -124,7 +124,9 @@ if "pending_delete_msg_id" not in st.session_state:
 # 新規質問投稿フォーム（生徒側）
 #####################################
 def show_new_question_form():
-    with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
+    # 新規質問フォームを背景色付きのコンテナで表示
+    with st.container():
+        st.markdown('<div style="background-color: #E6F7FF; padding: 15px; border-radius: 5px;">', unsafe_allow_html=True)
         st.subheader("新規質問を投稿")
         with st.form("new_question_form", clear_on_submit=False):
             new_title = st.text_input("質問のタイトルを入力", key="new_title")
@@ -134,6 +136,8 @@ def show_new_question_form():
             auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
             st.caption("認証キーは返信やタイトル削除等に必要です。")
             submitted = st.form_submit_button("投稿")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
         if submitted:
             existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                                if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
@@ -329,6 +333,9 @@ def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
     
+    # 詳細フォーラム全体の背景を水色に設定
+    st.markdown('<div style="background-color: #ADD8E6; padding: 15px; border-radius: 5px;">', unsafe_allow_html=True)
+    
     docs = fetch_questions_by_title(selected_title)
     
     first_question_poster = "匿名"
@@ -346,6 +353,7 @@ def show_chat_thread():
     
     if not records:
         st.write("該当する質問が見つかりません。")
+        st.markdown('</div>', unsafe_allow_html=True)
         return
     
     for doc in records:
@@ -374,10 +382,11 @@ def show_chat_thread():
             align = "right"
             bg_color = "#DCF8C6"
         
+        # チャットメッセージの横幅はテキスト部分を15文字分に設定
         st.markdown(
             f"""
             <div style="text-align: {align};">
-              <div style="display: inline-block; background-color: {bg_color}; padding: 10px; border-radius: 10px; max-width: 35%;">
+              <div style="display: inline-block; background-color: {bg_color}; padding: 10px; border-radius: 10px; max-width: 15ch;">
                 <b>{sender}:</b> {msg_display}<br>
                 <small>({formatted_time})</small>
               </div>
@@ -462,6 +471,8 @@ def show_chat_thread():
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)  
 
 if st.session_state.selected_title is None:
     show_title_list()

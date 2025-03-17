@@ -246,6 +246,10 @@ def show_title_list():
 def show_chat_thread():
     selected_title = st.session_state.selected_title
     st.title(f"質問詳細: {selected_title}")
+    
+    # 詳細フォーラム全体の背景を水色に設定
+    st.markdown('<div style="background-color: #ADD8E6; padding: 15px; border-radius: 5px;">', unsafe_allow_html=True)
+    
     docs = fetch_questions_by_title(selected_title)
     
     first_question_poster = "匿名"
@@ -262,6 +266,7 @@ def show_chat_thread():
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if not records:
         st.write("該当する質問が見つかりません。")
+        st.markdown('</div>', unsafe_allow_html=True)
         return
     
     for doc in records:
@@ -290,7 +295,7 @@ def show_chat_thread():
         st.markdown(
             f"""
             <div style="text-align: {align};">
-              <div style="display: inline-block; background-color: {bg_color}; padding: 10px; border-radius: 10px; max-width: 35%;">
+              <div style="display: inline-block; background-color: {bg_color}; padding: 10px; border-radius: 10px; max-width: 15ch;">
                 <b>{sender}:</b> {msg_display}<br>
                 <small>({formatted_time})</small>
               </div>
@@ -310,7 +315,7 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 生徒側は自分の投稿（[先生]以外）に対して削除ボタンを表示
+        # 教師側は自分の投稿（[先生]で始まる投稿）に対して削除ボタンを表示
         if st.session_state.is_authenticated and ((msg_text.strip() != "") or data.get("image")) and msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
@@ -369,6 +374,8 @@ def show_chat_thread():
     if st.button("戻る", key="teacher_chat_back"):
         st.session_state.selected_title = None
         st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)  
 
 if st.session_state.selected_title is None:
     show_title_list()
