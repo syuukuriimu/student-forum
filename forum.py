@@ -9,33 +9,6 @@ import cv2
 import numpy as np
 
 #############################################
-# CSSの注入（新規質問フォーム用と返信エリア用）
-#############################################
-st.markdown(
-    """
-    <style>
-    .new-question-form {
-        background-color: #CCFFCC;
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-    }
-    .reply-area {
-        background-color: white;
-        width: 100%;
-        padding: 20px;
-        margin-top: 20px;
-    }
-    /* 既存のExpanderのヘッダー背景（任意） */
-    [data-baseweb="accordion"] > div[role="button"] {
-        background-color: #CCFFCC !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-#############################################
 # 生徒ログイン
 #############################################
 if "student_authenticated" not in st.session_state:
@@ -132,23 +105,26 @@ if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 
 #############################################
-# 新規質問投稿フォーム
+# 新規質問投稿フォーム（ヘッダーで装飾）
 #############################################
 def show_new_question_form():
-    with st.container():
-        st.markdown('<div class="new-question-form">', unsafe_allow_html=True)
-        with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
-            with st.container():
-                st.subheader("新規質問を投稿")
-                with st.form("new_question_form", clear_on_submit=False):
-                    new_title = st.text_input("質問のタイトルを入力", key="new_title")
-                    new_text = st.text_area("質問内容を入力", key="new_text")
-                    new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
-                    poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-                    auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
-                    st.caption("認証キーは返信やタイトル削除等に必要です。")
-                    submitted = st.form_submit_button("投稿")
-        st.markdown("</div>", unsafe_allow_html=True)
+    # ヘッダー部分に黄緑の背景を適用
+    st.markdown(
+        """
+        <div style="background-color: #CCFFCC; padding: 10px; border-radius: 10px; margin-bottom: 10px;">
+            <h2 style="margin: 0;">新規質問を投稿する</h2>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    with st.form("new_question_form", clear_on_submit=False):
+        new_title = st.text_input("質問のタイトルを入力", key="new_title")
+        new_text = st.text_area("質問内容を入力", key="new_text")
+        new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
+        poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
+        auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
+        st.caption("認証キーは返信やタイトル削除等に必要です。")
+        submitted = st.form_submit_button("投稿")
     if submitted:
         existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                            if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
@@ -330,12 +306,10 @@ def show_title_list():
 #############################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    # タイトル部分（白背景のコンテナ）
     st.markdown(
         f'<div style="background-color: white; padding: 20px; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
         unsafe_allow_html=True
     )
-    # 全体の背景を薄い水色に設定
     st.markdown(
         """
         <style>
@@ -378,12 +352,12 @@ def show_chat_thread():
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
             align = "left"
-            bg_color = "#FFFFFF"  # 先生は白背景
+            bg_color = "#FFFFFF"
         else:
             sender = poster
             msg_display = msg_text
             align = "right"
-            bg_color = "#DCF8C6"  # 生徒は緑背景
+            bg_color = "#DCF8C6"
         st.markdown(
             f"""
             <div style="text-align: {align}; margin-bottom: 15px;">
@@ -413,49 +387,48 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-    # 返信エリア：下部のみ白背景にするため、CSSクラスを利用
+    # 返信エリアの上部に白背景のヘッダーを表示
+    st.markdown(
+        """
+        <div style="background-color: white; padding: 10px; border: 1px solid #ccc; border-radius: 10px; margin-top: 20px;">
+            <h3 style="margin: 0;">返信エリア</h3>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    # 返信エリア自体は通常のレイアウトに戻す
     with st.container():
-        st.markdown('<div class="reply-area">', unsafe_allow_html=True)
-        if not st.session_state.is_authenticated:
-            st.markdown('<div style="padding: 5px;">認証されていないため返信はできません。</div>', unsafe_allow_html=True)
         if st.button("更新", key="chat_update"):
             st.cache_resource.clear()
             st.rerun()
         if st.session_state.is_authenticated:
-            with st.expander("返信する", expanded=False):
-                with st.container():
-                    with st.form("reply_form_student", clear_on_submit=True):
-                        reply_text = st.text_area("メッセージを入力", key="reply_text")
-                        reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
-                        submitted = st.form_submit_button("送信")
-                        if submitted:
-                            processed_reply = process_image(reply_image) if reply_image is not None else None
-                            if not reply_text.strip() and not reply_image:
-                                st.error("少なくともメッセージか画像を投稿してください。")
-                            else:
-                                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                                db.collection("questions").add({
-                                    "title": selected_title,
-                                    "question": reply_text.strip(),
-                                    "image": processed_reply,
-                                    "timestamp": time_str,
-                                    "deleted": 0,
-                                    "poster": first_question_poster
-                                })
-                                st.cache_resource.clear()
-                                st.success("返信を送信しました！")
-                                st.rerun()
-                    st.markdown("</div>", unsafe_allow_html=True)
+            with st.form("reply_form_student", clear_on_submit=True):
+                reply_text = st.text_area("メッセージを入力", key="reply_text")
+                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
+                submitted = st.form_submit_button("送信")
+                if submitted:
+                    processed_reply = process_image(reply_image) if reply_image is not None else None
+                    if not reply_text.strip() and not reply_image:
+                        st.error("少なくともメッセージか画像を投稿してください。")
+                    else:
+                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                        db.collection("questions").add({
+                            "title": selected_title,
+                            "question": reply_text.strip(),
+                            "image": processed_reply,
+                            "timestamp": time_str,
+                            "deleted": 0,
+                            "poster": first_question_poster
+                        })
+                        st.cache_resource.clear()
+                        st.success("返信を送信しました！")
+                        st.rerun()
         else:
             st.info("認証されていないため返信はできません。")
-        st.markdown("</div>", unsafe_allow_html=True)
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.rerun()
 
-#############################################
-# 表示分岐：質問一覧 or 詳細チャット
-#############################################
 if st.session_state.selected_title is None:
     show_title_list()
 else:
