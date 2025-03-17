@@ -218,7 +218,7 @@ def show_chat_thread():
         """
         <style>
         .block-container {
-            background-color: #d9f2ff;
+            background-color: #e6f7ff;
             padding: 20px;
         }
         </style>
@@ -285,7 +285,7 @@ def show_chat_thread():
             align_style = "margin-left: auto;" if align=="right" else "margin-right: auto;"
             st.markdown(
                 f'''
-                <div style="text-align: {align}; margin-bottom: 15px; background-color: #D3F7FF; padding: 0;">
+                <div style="text-align: {align}; margin-bottom: 15px; background-color: #e6f7ff; padding: 0;">
                     <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto; {align_style}">
                 </div>
                 ''',

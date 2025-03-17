@@ -376,11 +376,11 @@ def show_chat_thread():
         )
         if "image" in data and data["image"]:
             img_data = base64.b64encode(data["image"]).decode("utf-8")
-            # 画像コンテナ：背景色 #D3F7FF、幅80%、配置はチャットの寄せに合わせる
+            # 画像コンテナ：背景色 #e6f7ff、幅80%、配置はチャットの寄せに合わせる
             align_style = "margin-left: auto;" if align=="right" else "margin-right: auto;"
             st.markdown(
                 f'''
-                <div style="text-align: {align}; margin-bottom: 15px; background-color: #D3F7FF; padding: 0;">
+                <div style="text-align: {align}; margin-bottom: 15px; background-color: #e6f7ff; padding: 0;">
                     <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto; {align_style}">
                 </div>
                 ''',
