@@ -8,7 +8,7 @@ import ast
 import cv2
 import numpy as np
 
-# ---------- CSS 注入：新規質問投稿の Expander ヘッダーを黄緑に変更 ----------
+# ---------- CSS 注入：新規質問フォーム Expander のヘッダー背景を黄緑に変更 ----------
 st.markdown(
     """
     <style>
@@ -82,7 +82,7 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ---------- キャッシュ付き Firestore アクセス（TTL 10秒）----------
+# ---------- キャッシュ付き Firestore アクセス（TTL 10秒） ----------
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
     return list(
@@ -119,20 +119,24 @@ if "pending_delete_msg_id" not in st.session_state:
 # 新規質問投稿フォーム（生徒側）
 #####################################
 def show_new_question_form():
-    # Expander全体のラッパーに黄緑の背景を設定
-    st.markdown('<div id="new_question_expander" style="background-color: #CCFFCC; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
-    with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
-        with st.container():
-            st.subheader("新規質問を投稿")
-            with st.form("new_question_form", clear_on_submit=False):
-                new_title = st.text_input("質問のタイトルを入力", key="new_title")
-                new_text = st.text_area("質問内容を入力", key="new_text")
-                new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
-                poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-                auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
-                st.caption("認証キーは返信やタイトル削除等に必要です。")
-                submitted = st.form_submit_button("投稿")
-    st.markdown("</div>", unsafe_allow_html=True)
+    # Expander全体を囲むコンテナ（背景色黄緑を全体に適用）
+    with st.container():
+        st.markdown(
+            '<div style="background-color: #CCFFCC; padding: 10px; border-radius: 5px;">',
+            unsafe_allow_html=True
+        )
+        with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
+            with st.container():
+                st.subheader("新規質問を投稿")
+                with st.form("new_question_form", clear_on_submit=False):
+                    new_title = st.text_input("質問のタイトルを入力", key="new_title")
+                    new_text = st.text_area("質問内容を入力", key="new_text")
+                    new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
+                    poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
+                    auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
+                    st.caption("認証キーは返信やタイトル削除等に必要です。")
+                    submitted = st.form_submit_button("投稿")
+        st.markdown("</div>", unsafe_allow_html=True)
     if submitted:
         existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                            if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
@@ -314,12 +318,12 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    # タイトル部分：白背景のコンテナを下に配置し、上部に薄い水色背景が見えるように余白を設定
+    # タイトル部分：白背景のコンテナを下に配置し、上部に薄い水色背景が見えるよう余白を確保
     st.markdown(
         f'<div style="background-color: white; padding: 10px; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
         unsafe_allow_html=True
     )
-    # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更（画像のない部分も適用） ----------
+    # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更 ----------
     st.markdown(
         """
         <style>
@@ -398,45 +402,17 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-        # 返信不可時のメッセージ（背景は白）
-        if not st.session_state.is_authenticated:
-            st.markdown('<div style="background-color: white; padding: 5px; border-radius: 5px;">認証されていないため、返信はできません。</div>', unsafe_allow_html=True)
-        if st.session_state.is_authenticated and not msg_text.startswith("[先生]"):
-            if st.button("🗑", key=f"del_{doc.id}"):
-                st.session_state.pending_delete_msg_id = doc.id
-                st.rerun()
-            if st.session_state.get("pending_delete_msg_id") == doc.id:
-                st.warning("本当にこの投稿を削除しますか？")
-                confirm_col1, confirm_col2 = st.columns(2)
-                if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
-                    d_ref = db.collection("questions").document(doc.id)
-                    d_ref.update({"deleted": 1})
-                    st.session_state.pending_delete_msg_id = None
-                    st.cache_resource.clear()
-                    st.rerun()
-                if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
-                    st.session_state.pending_delete_msg_id = None
-                    st.rerun()
-    st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        <script>
-        const el = document.getElementById('latest_message');
-        if(el){
-             el.scrollIntoView({behavior: 'smooth'});
-        }
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
-    # 操作エリア（返信、更新、戻る）は白背景にするため、ここは個別にラッパー
-    st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
+    # 操作エリア（返信、更新、戻る）は、--- の下全体を白背景で囲む
+    st.markdown('<div style="background-color: white !important; padding: 20px; border-radius: 5px; margin-top: 20px;">', unsafe_allow_html=True)
+    # ここで、認証されていない場合のみ、１度だけメッセージを表示
+    if not st.session_state.is_authenticated:
+        st.markdown('<div style="padding: 5px;">認証されていないため、返信はできません。</div>', unsafe_allow_html=True)
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
-            st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
+            st.markdown('<div style="background-color: white !important; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
             with st.form("reply_form_student", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力", key="reply_text")
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
@@ -461,7 +437,7 @@ def show_chat_thread():
             st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.info("認証されていないため、返信はできません。")
-    st.markdown("</div>", unsafe_allow_html=True)  # 操作エリアラッパー終了
+    st.markdown("</div>", unsafe_allow_html=True)  # 操作エリア終了
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.rerun()

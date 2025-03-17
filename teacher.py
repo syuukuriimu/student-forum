@@ -301,44 +301,14 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-        if not st.session_state.is_authenticated:
-            st.markdown('<div style="background-color: white; padding: 5px; border-radius: 5px;">認証されていないため、返信はできません。</div>', unsafe_allow_html=True)
-        if st.session_state.is_authenticated and not msg_text.startswith("[先生]"):
-            if st.button("🗑", key=f"del_{doc.id}"):
-                st.session_state.pending_delete_msg_id = doc.id
-                st.rerun()
-            if st.session_state.get("pending_delete_msg_id") == doc.id:
-                st.warning("本当にこの投稿を削除しますか？")
-                confirm_col1, confirm_col2 = st.columns(2)
-                if confirm_col1.button("はい", key=f"confirm_delete_{doc.id}"):
-                    d_ref = db.collection("questions").document(doc.id)
-                    d_ref.update({"deleted": 1})
-                    st.session_state.pending_delete_msg_id = None
-                    st.cache_resource.clear()
-                    st.rerun()
-                if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
-                    st.session_state.pending_delete_msg_id = None
-                    st.rerun()
-    st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        <script>
-        const el = document.getElementById('latest_message');
-        if(el){
-             el.scrollIntoView({behavior: 'smooth'});
-        }
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
-    # 操作エリア（返信、更新、戻る）は白背景で固定
-    st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
+    # 操作エリア全体（返信、更新、戻る）：白背景で統一（block-container の影響を除外）
+    st.markdown('<div style="background-color: white !important; padding: 20px; border-radius: 5px; margin-top: 20px;">', unsafe_allow_html=True)
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
-            st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
+            st.markdown('<div style="background-color: white !important; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
             with st.form("teacher_reply_form", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"])
@@ -362,7 +332,7 @@ def show_chat_thread():
             st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.info("認証されていないため、返信はできません。")
-    st.markdown("</div>", unsafe_allow_html=True)  # 操作エリアラッパー終了
+    st.markdown("</div>", unsafe_allow_html=True)  # 操作エリア終了
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.rerun()
