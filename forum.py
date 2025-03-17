@@ -393,7 +393,6 @@ def show_chat_thread():
         st.rerun()
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
-            st.markdown('<div style="background-color: white; width: 100%; padding: 10px;">', unsafe_allow_html=True)
             with st.form("reply_form_student", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力", key="reply_text")
                 reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
@@ -415,7 +414,7 @@ def show_chat_thread():
                         st.cache_resource.clear()
                         st.success("返信を送信しました！")
                         st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
+    
     else:
         st.info("認証されていないため返信はできません。")
     if st.button("戻る", key="chat_back"):
