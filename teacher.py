@@ -32,18 +32,15 @@ def process_image(image_file, max_size=1000000, max_width=800, initial_quality=9
     except Exception as e:
         st.error("画像の読み込みに失敗しました。")
         return None
-
     if img is None:
         st.error("画像のデコードに失敗しました。")
         return None
-
     height, width, _ = img.shape
     if width > max_width:
         ratio = max_width / width
         new_width = max_width
         new_height = int(height * ratio)
         img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-
     quality = initial_quality
     while quality >= 10:
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
@@ -80,7 +77,6 @@ def fetch_all_questions():
         .order_by("timestamp", direction=firestore.Query.DESCENDING)
         .stream()
     )
-
 @st.cache_resource(ttl=10)
 def fetch_questions_by_title(title):
     return list(
@@ -108,11 +104,9 @@ def show_title_list():
     st.subheader("質問一覧")
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
-    
     docs = fetch_all_questions()
     teacher_deleted_titles = { doc.to_dict().get("title") for doc in docs 
                               if doc.to_dict().get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました")}
-    
     title_info = {}
     for doc in docs:
         data = doc.to_dict()
@@ -146,15 +140,12 @@ def show_title_list():
             "auth_key": info["auth_key"],
             "update": info["update"]
         })
-    
     if keywords:
         def match(item):
             text = (item["title"] + " " + item["poster"]).lower()
             return all(kw in text for kw in keywords)
         distinct_titles = [item for item in distinct_titles if match(item)]
-    
     distinct_titles.sort(key=lambda x: x["update"], reverse=True)
-    
     if not distinct_titles:
         st.write("現在、質問はありません。")
     else:
@@ -172,7 +163,6 @@ def show_title_list():
                 if cols[1].button("🗑", key=f"teacher_del_{idx}"):
                     st.session_state.pending_delete_title = title
                     st.rerun()
-                
                 if st.session_state.pending_delete_title == title:
                     st.markdown("---")
                     st.subheader(f"{title} の削除確認")
@@ -227,12 +217,11 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    # タイトル部分：白背景のコンテナを下に配置して、上部の背景（薄い水色）が見えるように
+    # タイトル部分：forum.py と同様に、白背景のコンテナを下に配置して余白を確保
     st.markdown(
         f'<div style="background-color: white; padding: 10px; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
         unsafe_allow_html=True
     )
-    
     # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更 ----------
     st.markdown(
         """
@@ -245,25 +234,20 @@ def show_chat_thread():
         """,
         unsafe_allow_html=True
     )
-    
     docs = fetch_questions_by_title(selected_title)
-    
     first_question_poster = "匿名"
     if docs:
         first_question = docs[0].to_dict()
         first_question_poster = first_question.get("poster", "匿名")
-    
     sys_msgs = [doc.to_dict() for doc in docs if doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if sys_msgs:
         for sys_msg in sys_msgs:
             text = sys_msg.get("question", "")[8:]
             st.markdown(f"<h3 style='color: red; text-align: center;'>{text}</h3>", unsafe_allow_html=True)
-    
     records = [doc for doc in docs if not doc.to_dict().get("question", "").startswith("[SYSTEM]")]
     if not records:
         st.write("該当する質問が見つかりません。")
         return
-    
     for doc in records:
         data = doc.to_dict()
         msg_text = data.get("question", "")
@@ -277,7 +261,6 @@ def show_chat_thread():
         if deleted:
             st.markdown("<div style='color: red;'>【投稿が削除されました】</div>", unsafe_allow_html=True)
             continue
-        
         if msg_text.startswith("[先生]"):
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
@@ -288,7 +271,6 @@ def show_chat_thread():
             msg_display = msg_text
             align = "right"
             bg_color = "#DCF8C6"  # 生徒は緑背景
-        
         st.markdown(
             f"""
             <div style="text-align: {align}; margin-bottom: 15px;">
@@ -297,7 +279,7 @@ def show_chat_thread():
                   background-color: {bg_color};
                   padding: 10px;
                   border-radius: 10px;
-                  max-width: 80%;
+                  width: 80%;
                   word-wrap: break-word;">
                 <b>{sender}:</b> {msg_display}<br>
                 <small>({formatted_time})</small>
@@ -312,17 +294,15 @@ def show_chat_thread():
                 f'''
                 <div style="text-align: {align}; margin-bottom: 15px;">
                     <div style="background-color: #FFFFFF; display: inline-block; border-radius: 10px;">
-                        <img src="data:image/png;base64,{img_data}" style="width: 100%; height:auto;">
+                        <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto;">
                     </div>
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-        
         if not st.session_state.is_authenticated:
             st.markdown('<div style="background-color: white; padding: 5px; border-radius: 5px;">認証されていないため、返信はできません。</div>', unsafe_allow_html=True)
-        
         if st.session_state.is_authenticated and not msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
                 st.session_state.pending_delete_msg_id = doc.id
@@ -339,7 +319,6 @@ def show_chat_thread():
                 if confirm_col2.button("キャンセル", key=f"cancel_delete_{doc.id}"):
                     st.session_state.pending_delete_msg_id = None
                     st.rerun()
-    
     st.markdown("<div id='latest_message'></div>", unsafe_allow_html=True)
     st.markdown(
         """
@@ -352,11 +331,11 @@ def show_chat_thread():
         """,
         unsafe_allow_html=True
     )
-    st.write("---")
+    # 操作エリア（返信、更新、戻る）は白背景で固定
+    st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
-    
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
             st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
@@ -381,7 +360,10 @@ def show_chat_thread():
                         st.success("返信を送信しました！")
                         st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
-    if st.button("戻る", key="teacher_chat_back"):
+    else:
+        st.info("認証されていないため、返信はできません。")
+    st.markdown("</div>", unsafe_allow_html=True)  # 操作エリアラッパー終了
+    if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.rerun()
 
