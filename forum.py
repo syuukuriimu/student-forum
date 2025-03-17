@@ -126,8 +126,12 @@ def show_new_question_form():
         </script>
     """, unsafe_allow_html=True)
 
-    # クエリパラメータで開閉を制御
-    if st.query_params.get("toggle_form") == "true":
+    # 初期化
+    if "show_form" not in st.session_state:
+        st.session_state.show_form = False
+
+    # クリックで開閉
+    if st.button("新規質問を作成"):
         st.session_state.show_form = not st.session_state.show_form
 
     if st.session_state.show_form:
