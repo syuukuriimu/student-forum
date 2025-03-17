@@ -23,7 +23,7 @@ if not st.session_state.authenticated:
             st.error("パスワードが違います。")
     st.stop()
 
-# ---------- OpenCV を利用した画像圧縮処理 ----------
+# ---------- 画像圧縮処理 ----------
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
     try:
         image_file.seek(0)
@@ -69,24 +69,15 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ---------- キャッシュ付き Firestore アクセス（TTL 10秒）----------
+# ---------- キャッシュ付き Firestore アクセス ----------
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
-    return list(
-        db.collection("questions")
-        .order_by("timestamp", direction=firestore.Query.DESCENDING)
-        .stream()
-    )
+    return list(db.collection("questions").order_by("timestamp", direction=firestore.Query.DESCENDING).stream())
 @st.cache_resource(ttl=10)
 def fetch_questions_by_title(title):
-    return list(
-        db.collection("questions")
-        .where("title", "==", title)
-        .order_by("timestamp")
-        .stream()
-    )
+    return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
 
-# ---------- Session State の初期化（教師用）----------
+# ---------- Session State 初期化（教師用）----------
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
 if "pending_delete_title" not in st.session_state:
@@ -105,7 +96,7 @@ def show_title_list():
     keyword_input = st.text_input("キーワード検索")
     keywords = [w.strip().lower() for w in keyword_input.split() if w.strip()] if keyword_input else []
     docs = fetch_all_questions()
-    teacher_deleted_titles = { doc.to_dict().get("title") for doc in docs 
+    teacher_deleted_titles = {doc.to_dict().get("title") for doc in docs 
                               if doc.to_dict().get("question", "").startswith("[SYSTEM]先生は質問フォームを削除しました")}
     title_info = {}
     for doc in docs:
@@ -153,7 +144,6 @@ def show_title_list():
             with st.container():
                 title = item["title"]
                 poster = item["poster"]
-                auth_code = item["auth_code"] if "auth_code" in item else item["auth_key"]
                 update_time = item["update"]
                 cols = st.columns([8, 2])
                 label = f"{title}\n(投稿者: {poster})\n最終更新: {update_time}"
@@ -217,12 +207,11 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    # タイトル部分：forum.py と同様、白背景コンテナで下部に十分余白を確保
+    # タイトル部分：forum.py と同様、白背景コンテナで配置（上部に十分余白を確保）
     st.markdown(
         f'<div style="background-color: white; padding: 10px; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
         unsafe_allow_html=True
     )
-    # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更 ----------
     st.markdown(
         """
         <style>
@@ -279,7 +268,7 @@ def show_chat_thread():
                   background-color: {bg_color};
                   padding: 10px;
                   border-radius: 10px;
-                  width: 80%;
+                  max-width: 80%;
                   word-wrap: break-word;">
                 <b>{sender}:</b> {msg_display}<br>
                 <small>({formatted_time})</small>
@@ -290,17 +279,21 @@ def show_chat_thread():
         )
         if "image" in data and data["image"]:
             img_data = base64.b64encode(data["image"]).decode("utf-8")
+            # 画像配置：背景は #D3F7FF、幅80%、配置はチャットの寄せに合わせる
+            align_style = "margin-left: auto;" if align=="right" else "margin-right: auto;"
             st.markdown(
                 f'''
                 <div style="text-align: {align}; margin-bottom: 15px; background-color: #D3F7FF; padding: 0;">
-                    <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto; display: block; margin: auto;">
+                    <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto; {align_style}">
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-    # 操作エリア全体：白背景、横幅100%、最新投稿から約2行分の余白を確保
+    # 操作エリア全体：白背景、横幅100%、十分なパディング（最新投稿から約2行分の余白）
     st.markdown('<div style="background-color: white; width: 100%; padding: 20px; margin-top: 20px;">', unsafe_allow_html=True)
+    if not st.session_state.is_authenticated:
+        st.markdown('<div style="padding: 5px;">認証されていないため返信はできません。</div>', unsafe_allow_html=True)
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()

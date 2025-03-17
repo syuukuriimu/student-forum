@@ -8,7 +8,7 @@ import ast
 import cv2
 import numpy as np
 
-# ---------- CSS 注入：新規質問投稿の Expander ヘッダー背景を黄緑に変更 ----------
+# ---------- CSS 注入：新規質問投稿 Expander ヘッダー背景（黄緑） ----------
 st.markdown(
     """
     <style>
@@ -35,13 +35,13 @@ if not st.session_state.student_authenticated:
             st.error("パスワードが違います。")
     st.stop()
 
-# ---------- OpenCV を利用した画像圧縮処理 ----------
+# ---------- 画像圧縮処理 ----------
 def process_image(image_file, max_size=1000000, max_width=800, initial_quality=95):
     try:
         image_file.seek(0)
         file_bytes = np.asarray(bytearray(image_file.read()), dtype=np.uint8)
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-    except Exception as e:
+    except Exception:
         st.error("画像の読み込みに失敗しました。")
         return None
     if img is None:
@@ -81,24 +81,15 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ---------- キャッシュ付き Firestore アクセス（TTL 10秒）----------
+# ---------- キャッシュ付き Firestore アクセス ----------
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
-    return list(
-        db.collection("questions")
-        .order_by("timestamp", direction=firestore.Query.DESCENDING)
-        .stream()
-    )
+    return list(db.collection("questions").order_by("timestamp", direction=firestore.Query.DESCENDING).stream())
 @st.cache_resource(ttl=10)
 def fetch_questions_by_title(title):
-    return list(
-        db.collection("questions")
-        .where("title", "==", title)
-        .order_by("timestamp")
-        .stream()
-    )
+    return list(db.collection("questions").where("title", "==", title).order_by("timestamp").stream())
 
-# ---------- Session State の初期化 ----------
+# ---------- Session State 初期化 ----------
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
 if "pending_auth_title" not in st.session_state:
@@ -115,14 +106,11 @@ if "pending_delete_msg_id" not in st.session_state:
     st.session_state.pending_delete_msg_id = None
 
 #####################################
-# 新規質問投稿フォーム（生徒側）
+# 新規質問投稿フォーム
 #####################################
 def show_new_question_form():
-    # Expander全体のラッパー（背景色黄緑を全体に適用）
-    st.markdown(
-        '<div style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">',
-        unsafe_allow_html=True
-    )
+    # 新規質問投稿フォーム全体のラッパー：背景色を黄緑 (#CCFFCC) に全体適用
+    st.markdown('<div style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">', unsafe_allow_html=True)
     with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
         with st.container():
             st.subheader("新規質問を投稿")
@@ -165,7 +153,7 @@ def show_new_question_form():
             st.rerun()
 
 #####################################
-# 質問一覧の表示（生徒側）
+# 質問一覧表示
 #####################################
 def show_title_list():
     st.title("📖 質問フォーラム")
@@ -312,16 +300,16 @@ def show_title_list():
         st.rerun()
 
 #####################################
-# 質問詳細（チャットスレッド）の表示（生徒側）
+# 質問詳細（チャットスレッド）の表示
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    # タイトル部分：白背景のコンテナを下に配置し、上部に十分余白を確保（背景の薄い水色が見える）
+    # タイトル部分：白背景コンテナを下に配置（上部に十分余白をとって背景の薄い水色が見える）
     st.markdown(
         f'<div style="background-color: white; padding: 10px; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
         unsafe_allow_html=True
     )
-    # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更 ----------
+    # 詳細フォーラム全体の背景は薄い水色
     st.markdown(
         """
         <style>
@@ -370,6 +358,7 @@ def show_chat_thread():
             msg_display = msg_text
             align = "right"
             bg_color = "#DCF8C6"  # 生徒は緑背景
+        # チャット枠の幅はテキストに合わせ、最大は80%
         st.markdown(
             f"""
             <div style="text-align: {align}; margin-bottom: 15px;">
@@ -378,7 +367,7 @@ def show_chat_thread():
                   background-color: {bg_color};
                   padding: 10px;
                   border-radius: 10px;
-                  width: 80%;
+                  max-width: 80%;
                   word-wrap: break-word;">
                 <b>{sender}:</b> {msg_display}<br>
                 <small>({formatted_time})</small>
@@ -389,18 +378,22 @@ def show_chat_thread():
         )
         if "image" in data and data["image"]:
             img_data = base64.b64encode(data["image"]).decode("utf-8")
-            # 画像コンテナの背景色を薄い水色に設定
+            # 画像コンテナ：背景色 #D3F7FF、幅80%、配置はチャットの寄せに合わせる
+            align_style = "margin-left: auto;" if align=="right" else "margin-right: auto;"
             st.markdown(
                 f'''
                 <div style="text-align: {align}; margin-bottom: 15px; background-color: #D3F7FF; padding: 0;">
-                    <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto; display: block; margin: auto;">
+                    <img src="data:image/png;base64,{img_data}" style="width: 80%; height:auto; {align_style}">
                 </div>
                 ''',
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-    # 操作エリア全体：白背景、横幅画面いっぱい（ここでは100%）と十分な縦幅（最新投稿から2行以上の余白）
+    # 操作エリア全体：横幅100%、背景白、十分なパディング（最新投稿から約2行分の余白）
     st.markdown('<div style="background-color: white; width: 100%; padding: 20px; margin-top: 20px;">', unsafe_allow_html=True)
+    # 認証されていない場合のメッセージは、操作エリアの上部に1行だけ表示
+    if not st.session_state.is_authenticated:
+        st.markdown('<div style="padding: 5px;">認証されていないため返信はできません。</div>', unsafe_allow_html=True)
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
@@ -429,6 +422,8 @@ def show_chat_thread():
                         st.success("返信を送信しました！")
                         st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.info("認証されていないため返信はできません。")
     st.markdown("</div>", unsafe_allow_html=True)  # 操作エリア終了
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
