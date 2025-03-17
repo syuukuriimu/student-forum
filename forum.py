@@ -327,7 +327,22 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    st.title(f"質問詳細: {selected_title}")
+    selected_title = st.session_state.selected_title
+    st.markdown(
+        f'<h2 style="background-color: white; padding: 20px; width: fit-content; margin: 40px auto 10px auto;">質問詳細: {selected_title}</h2>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        """
+        <style>
+        .block-container {
+            background-color: #D3F7FF;
+            padding: 20px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
     
     docs = fetch_questions_by_title(selected_title)
     
