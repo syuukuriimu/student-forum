@@ -109,20 +109,18 @@ if "pending_delete_msg_id" not in st.session_state:
 # 新規質問投稿フォーム
 #####################################
 def show_new_question_form():
-    # 新規質問投稿フォーム全体のラッパー：背景色を黄緑 (#CCFFCC) に全体適用
-    st.markdown('<div style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">', unsafe_allow_html=True)
-    with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
-        with st.container():
-            st.subheader("新規質問を投稿")
-            with st.form("new_question_form", clear_on_submit=False):
-                new_title = st.text_input("質問のタイトルを入力", key="new_title")
-                new_text = st.text_area("質問内容を入力", key="new_text")
-                new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
-                poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-                auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
-                st.caption("認証キーは返信やタイトル削除等に必要です。")
-                submitted = st.form_submit_button("投稿")
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.expander("新規質問を投稿する（クリックして開く）", expanded=False)
+    with st.container():
+        st.subheader("新規質問を投稿")
+        with st.form("new_question_form", clear_on_submit=False):
+            new_title = st.text_input("質問のタイトルを入力", key="new_title")
+            new_text = st.text_area("質問内容を入力", key="new_text")
+            new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
+            poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
+            auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
+            st.caption("認証キーは返信やタイトル削除等に必要です。")
+            submitted = st.form_submit_button("投稿")
+    
     if submitted:
         existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                            if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
@@ -317,10 +315,18 @@ def show_chat_thread():
             background-color: #D3F7FF;
             padding: 20px;
         }
+         /* 特定の範囲だけ異なる背景 */
+        .highlight-section {
+            background-color: white; 
+            padding: 20px;
+            margin: 20px auto;
+            width: 95%; /* 中央寄せ */
+        }
         </style>
         """,
         unsafe_allow_html=True
     )
+    
     docs = fetch_questions_by_title(selected_title)
     first_question_poster = "匿名"
     if docs:
@@ -389,8 +395,8 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-    # 操作エリア全体：横幅100%、背景白、十分なパディング（最新投稿から約2行分の余白）
-    st.markdown('<div style="background-color: white; width: 100%; padding: 20px; margin-top: 20px;">', unsafe_allow_html=True)
+    # 背景を変えたい範囲の開始
+    st.markdown('<div class="highlight-section">', unsafe_allow_html=True)
     
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
@@ -422,10 +428,12 @@ def show_chat_thread():
             st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.info("認証されていないため返信はできません。")
-    st.markdown("</div>", unsafe_allow_html=True)  # 操作エリア終了
+    
     if st.button("戻る", key="chat_back"):
         st.session_state.selected_title = None
         st.rerun()
+        
+    st.markdown("</div>", unsafe_allow_html=True)
 
 if st.session_state.selected_title is None:
     show_title_list()
