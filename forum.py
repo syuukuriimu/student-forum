@@ -391,6 +391,7 @@ def show_chat_thread():
      # 背景を変えたい範囲の開始
     st.markdown(
         """
+        <style>
         div[data-testid="stVerticalBlock"] {
             background-color: white;
             padding: 20px;
