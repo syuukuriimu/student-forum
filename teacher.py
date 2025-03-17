@@ -209,7 +209,7 @@ def show_chat_thread():
     selected_title = st.session_state.selected_title
     # タイトル部分：forum.py と同様、白背景コンテナで配置（上部に余白を確保）
     st.markdown(
-        f'<div style="background-color: white; padding: 5px; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
+        f'<div style="background-color: white; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
         unsafe_allow_html=True
     )
     # 詳細フォーラム全体の背景を薄い水色に設定
