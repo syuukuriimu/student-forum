@@ -449,6 +449,24 @@ def show_chat_thread():
         st.rerun()
     
     if st.session_state.is_authenticated:
+        st.markdown("""
+            <style>
+                /* エクスパンダーが閉じている状態の背景色 */
+                .streamlit-expanderHeader {
+                    background-color: white;
+                    color: #333333; /* 文字色をダークに */
+                    font-weight: bold; /* 文字を太字に */
+                    padding: 10px; /* パディングを追加 */
+                    border-radius: 10px; /* 角を丸くする */
+                }
+
+                /* エクスパンダーを開いたときの色変更 (任意) */
+                .streamlit-expanderHeader[aria-expanded="true"] {
+                    background-color: #b3ffb3; /* 開いた状態で少し暗い緑色 */
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
         with st.expander("返信する", expanded=False):
             with st.form("reply_form_student", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力", key="reply_text")
