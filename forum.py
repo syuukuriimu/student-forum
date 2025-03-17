@@ -252,8 +252,11 @@ def show_title_list():
                     st.write("このタイトルを削除してよろしいですか？")
                     with st.form(key=f"delete_form_{idx}"):
                         input_del_auth = st.text_input("認証キーを入力", type="password")
-                        submit_del = st.form_submit_button("削除する")
-                        cancel_del = st.form_submit_button("キャンセル")
+                        col1, col2 = st.columns(2)  # 2つのカラムを作成
+                        with col1:
+                            submit_del = st.form_submit_button("削除する")
+                        with col2:
+                            cancel_del = st.form_submit_button("キャンセル")
                     if submit_del:
                         docs = fetch_questions_by_title(title)
                         if docs:

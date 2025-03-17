@@ -159,8 +159,11 @@ def show_title_list():
                     st.subheader(f"{title} の削除確認")
                     st.write("このタイトルを削除してよろしいですか？")
                     with st.form(key=f"teacher_delete_form_{idx}"):
-                        submit_del = st.form_submit_button("はい")
-                        cancel_del = st.form_submit_button("キャンセル")
+                        col1, col2 = st.columns(2)  # 2つのカラムを作成
+                        with col1:
+                            submit_del = st.form_submit_button("はい")
+                        with col2:
+                            cancel_del = st.form_submit_button("キャンセル")
                     if submit_del:
                         docs = fetch_questions_by_title(title)
                         if docs:
