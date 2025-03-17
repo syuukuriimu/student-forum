@@ -8,14 +8,13 @@ import ast
 import cv2
 import numpy as np
 
-# ---------- CSS 注入：Expander ヘッダー（新規質問投稿）の背景を薄い緑に変更 ----------
-# ※ 新規質問投稿専用のラッパー div を用いる
+# ---------- CSS 注入：新規質問投稿の Expander ヘッダーを黄緑に変更 ----------
 st.markdown(
     """
     <style>
-    /* 新規質問投稿用エリアの expander ヘッダーを対象 */
-    #new_question_expander [data-baseweb="accordion"] > div[role="button"] {
-        background-color: #C8E6C9 !important;
+    /* 新規質問投稿エリア（forum.py）の expander ヘッダー背景を黄緑に */
+    [data-baseweb="accordion"] > div[role="button"] {
+        background-color: #CCFFCC !important;
     }
     </style>
     """,
@@ -86,7 +85,7 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# ---------- キャッシュ付き Firestore アクセス（TTL 10秒） ----------
+# ---------- キャッシュ付き Firestore アクセス（TTL 10秒）----------
 @st.cache_resource(ttl=10)
 def fetch_all_questions():
     return list(
@@ -124,14 +123,11 @@ if "pending_delete_msg_id" not in st.session_state:
 # 新規質問投稿フォーム（生徒側）
 #####################################
 def show_new_question_form():
-    # ラッパー div に id を付与し、背景色を設定（緑色）
-    st.markdown('<div id="new_question_expander">', unsafe_allow_html=True)
+    # 新規質問投稿エリアのラッパー：折りたたまれた Expander 全体に、背景色（黄緑）を付与
+    st.markdown('<div id="new_question_expander" style="background-color: #CCFFCC; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
     with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
         with st.container():
-            st.markdown(
-                '<div style="background-color: #E6F7FF; padding: 15px; border-radius: 5px;">',
-                unsafe_allow_html=True
-            )
+            # Expander内は白背景（ここでは設定なし＝デフォルト）※新規投稿フォーム自体の背景色は削除
             st.subheader("新規質問を投稿")
             with st.form("new_question_form", clear_on_submit=False):
                 new_title = st.text_input("質問のタイトルを入力", key="new_title")
@@ -141,8 +137,7 @@ def show_new_question_form():
                 auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
                 st.caption("認証キーは返信やタイトル削除等に必要です。")
                 submitted = st.form_submit_button("投稿")
-            st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)  # new_question_expander の閉じタグ
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if submitted:
         existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
@@ -332,17 +327,19 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    # タイトル部分は、白背景で囲む（見やすくする）
-    st.markdown(f'<div style="background-color: white; padding: 10px; border-radius: 5px;"><h2>質問詳細: {selected_title}</h2></div>', unsafe_allow_html=True)
+    # タイトル部分：白背景、狭い幅＋青いボーダー（上部の余白に青が見える）
+    st.markdown(
+        f'<div style="background-color: white; padding: 10px; border: 2px solid blue; width: fit-content; margin: 20px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
+        unsafe_allow_html=True
+    )
     
-    # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更 ----------
+    # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更（画像のない部分も背景色に） ----------
     st.markdown(
         """
         <style>
         .block-container {
             background-color: #D3F7FF;
             padding: 20px;
-            border-radius: 5px;
         }
         </style>
         """,
@@ -385,12 +382,12 @@ def show_chat_thread():
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
             align = "left"
-            bg_color = "#FFFFFF"  # 先生のチャット枠は白背景（従来）
+            bg_color = "#FFFFFF"  # 先生のチャット枠は白背景
         else:
             sender = poster
             msg_display = msg_text
             align = "right"
-            bg_color = "#DCF8C6"  # 生徒のチャット枠は緑背景（従来）
+            bg_color = "#DCF8C6"  # 生徒のチャット枠は緑背景
         
         st.markdown(
             f"""
@@ -423,7 +420,7 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
         
-        # 返信不可時のメッセージ背景を白に
+        # 「返信はできません」のメッセージ（背景は白）を認証されていないときだけ表示
         if not st.session_state.is_authenticated:
             st.markdown('<div style="background-color: white; padding: 5px; border-radius: 5px;">認証されていないため、返信はできません。</div>', unsafe_allow_html=True)
         
@@ -463,7 +460,7 @@ def show_chat_thread():
     
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
-            # 返信エリアの背景を白に
+            # 返信エリア：背景は白のまま
             st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
             with st.form("reply_form_student", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力", key="reply_text")

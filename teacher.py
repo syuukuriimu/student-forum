@@ -227,8 +227,11 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    # タイトル部分は、白背景のコンテナで囲む（上部が見切れないように余白も追加）
-    st.markdown(f'<div style="background-color: white; padding: 20px 10px 10px 10px; border-radius: 5px; margin-top: 20px;"><h2>質問詳細: {selected_title}</h2></div>', unsafe_allow_html=True)
+    # タイトル部分：白背景＋狭い幅、青いボーダーで囲む（上部に青色が見える）
+    st.markdown(
+        f'<div style="background-color: white; padding: 10px; border: 2px solid blue; width: fit-content; margin: 20px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
+        unsafe_allow_html=True
+    )
     
     # ---------- CSS 注入：詳細フォーラム全体の背景を薄い水色に変更 ----------
     st.markdown(
@@ -237,7 +240,6 @@ def show_chat_thread():
         .block-container {
             background-color: #D3F7FF;
             padding: 20px;
-            border-radius: 5px;
         }
         </style>
         """,
@@ -280,12 +282,12 @@ def show_chat_thread():
             sender = "先生"
             msg_display = msg_text[len("[先生]"):].strip()
             align = "left"
-            bg_color = "#FFFFFF"  # 先生のチャット枠は従来の白背景
+            bg_color = "#FFFFFF"  # 先生のチャット枠は白背景（従来）
         else:
             sender = poster
             msg_display = msg_text
             align = "right"
-            bg_color = "#DCF8C6"  # 生徒のチャット枠は従来の緑背景
+            bg_color = "#DCF8C6"  # 生徒のチャット枠は緑背景（従来）
         
         st.markdown(
             f"""
@@ -317,6 +319,10 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+        
+        # 返信不可時のメッセージ（白背景）
+        if not st.session_state.is_authenticated:
+            st.markdown('<div style="background-color: white; padding: 5px; border-radius: 5px;">認証されていないため、返信はできません。</div>', unsafe_allow_html=True)
         
         if st.session_state.is_authenticated and not msg_text.startswith("[先生]"):
             if st.button("🗑", key=f"del_{doc.id}"):
@@ -354,7 +360,7 @@ def show_chat_thread():
     
     if st.session_state.is_authenticated:
         with st.expander("返信する", expanded=False):
-            # 返信エリア背景を白に
+            # 返信エリア：背景は白のまま
             st.markdown('<div style="background-color: white; padding: 10px; border-radius: 5px;">', unsafe_allow_html=True)
             with st.form("teacher_reply_form", clear_on_submit=True):
                 reply_text = st.text_area("メッセージを入力（自動的に [先生] が付与されます）")
