@@ -316,7 +316,7 @@ def show_chat_thread():
             padding: 20px;
         }
         div[data-testid="stVerticalBlock"] {
-        background-color: #FFDDC1; /* 薄いオレンジ */
+        background-color: white; /* 薄いオレンジ */
         padding: 20px;
         border-radius: 10px;
         }
