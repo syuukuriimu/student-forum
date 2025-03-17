@@ -108,14 +108,29 @@ if "pending_delete_msg_id" not in st.session_state:
 # 新規質問投稿フォーム（チェックボックスで折りたたみ表示）
 #############################################
 def show_new_question_form():
-    # ヘッダーとして、チェックボックスにより展開の有無を制御（常に表示）
-    new_form_expanded = st.checkbox("新規質問を投稿する", value=False, key="new_form_checkbox")
-    # ヘッダーの見出しは、薄い黄緑（#E0FFE0）の枠内で表示
-    st.markdown(
-        '<h3 style="background-color: #E0FFE0; border: 2px solid #90EE90; border-radius: 10px; padding: 10px;">新規質問投稿フォーム</h3>',
-        unsafe_allow_html=True
-    )
-    if new_form_expanded:
+    # 初期状態を設定
+    if "show_form" not in st.session_state:
+        st.session_state.show_form = False
+
+    # JavaScriptでボタン風のh3を作成
+    st.markdown("""
+        <h3 id="toggle_button" style="cursor: pointer; background-color: #eaffd0; padding: 10px; border-radius: 10px; text-align: center;">
+            新規質問を作成
+        </h3>
+        <script>
+            var button = document.getElementById("toggle_button");
+            button.onclick = function() {
+                fetch("/?toggle_form=true");
+                setTimeout(() => location.reload(), 100);
+            };
+        </script>
+    """, unsafe_allow_html=True)
+
+    # クエリパラメータで開閉を制御
+    if st.query_params.get("toggle_form") == "true":
+        st.session_state.show_form = not st.session_state.show_form
+
+    if st.session_state.show_form:
         with st.form("new_question_form", clear_on_submit=False):
             new_title = st.text_input("質問のタイトルを入力", key="new_title")
             new_text = st.text_area("質問内容を入力", key="new_text")
