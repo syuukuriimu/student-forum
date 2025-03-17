@@ -110,7 +110,7 @@ if "pending_delete_msg_id" not in st.session_state:
 #####################################
 def show_new_question_form():
     # 新規質問投稿フォーム全体のラッパー：背景色を黄緑 (#CCFFCC) に全体適用
-    st.markdown('<div style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">', unsafe_allow_html=True)
+    st.markdown('<div style="background-color: #CCFFCC; width: 100%; padding: 20px; margin-top: 20px;">', unsafe_allow_html=True)
     with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
         with st.container():
             st.subheader("新規質問を投稿")
@@ -390,10 +390,8 @@ def show_chat_thread():
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
     # 操作エリア全体：横幅100%、背景白、十分なパディング（最新投稿から約2行分の余白）
-    st.markdown('<div style="background-color: white; width: 100%; padding: 20px; margin-top: 20px;">', unsafe_allow_html=True)
-    # 認証されていない場合のメッセージは、操作エリアの上部に1行だけ表示
-    if not st.session_state.is_authenticated:
-        st.markdown('<div style="padding: 5px;">認証されていないため返信はできません。</div>', unsafe_allow_html=True)
+    st.markdown('<div style="background-color: white; width: 100%; padding: 100px; margin-top: 100px;">', unsafe_allow_html=True)
+   
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
