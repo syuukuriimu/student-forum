@@ -110,21 +110,7 @@ if "pending_delete_msg_id" not in st.session_state:
 #####################################
 def show_new_question_form():
     # 新規質問投稿フォーム全体のラッパー：背景色を黄緑 (#CCFFCC) に全体適用
-    st.markdown(
-    """
-    <style>
-    .custom-container {
-        background-color: #CCFFCC;
-        padding: 20px;
-        width: 100%; /* 幅を指定 */
-        margin-top: 20px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-    st.markdown('<div class="custom-container">', unsafe_allow_html=True)
-
+    st.markdown('<div style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">', unsafe_allow_html=True)
     with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
         with st.container():
             st.subheader("新規質問を投稿")
@@ -403,25 +389,9 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-        
     # 操作エリア全体：横幅100%、背景白、十分なパディング（最新投稿から約2行分の余白）
-    # カスタムCSSを適用
-    st.markdown(
-        """
-        <style>
-        .custom-container {
-            background-color: white;
-            padding: 20px;
-            width: 100%; /* 幅を指定 */
-            margin-top: 100px;  
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-   # 背景付きのコンテナを作成
-    st.markdown('<div class="custom-container">', unsafe_allow_html=True)
-   
+    st.markdown('<div style="background-color: white; width: 100%; padding: 20px; margin-top: 20px;">', unsafe_allow_html=True)
+    
     if st.button("更新", key="chat_update"):
         st.cache_resource.clear()
         st.rerun()
