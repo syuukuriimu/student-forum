@@ -207,11 +207,12 @@ def show_title_list():
 #####################################
 def show_chat_thread():
     selected_title = st.session_state.selected_title
-    # タイトル部分：forum.py と同様、白背景コンテナで配置（上部に十分余白を確保）
+    # タイトル部分：forum.py と同様、白背景コンテナで配置（上部に余白を確保）
     st.markdown(
         f'<div style="background-color: white; padding: 10px; width: fit-content; margin: 40px auto 10px auto;"><h2>質問詳細: {selected_title}</h2></div>',
         unsafe_allow_html=True
     )
+    # 詳細フォーラム全体の背景を薄い水色に設定
     st.markdown(
         """
         <style>
@@ -279,7 +280,7 @@ def show_chat_thread():
         )
         if "image" in data and data["image"]:
             img_data = base64.b64encode(data["image"]).decode("utf-8")
-            # 画像配置：背景は #D3F7FF、幅80%、配置はチャットの寄せに合わせる
+            # 画像の配置は、チャットの寄せに合わせる
             align_style = "margin-left: auto;" if align=="right" else "margin-right: auto;"
             st.markdown(
                 f'''
@@ -290,8 +291,9 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-    # 操作エリア全体：白背景、横幅100%、十分なパディング（最新投稿から約2行分の余白）
+    # 操作エリア全体：白背景、横幅100%、十分なパディング（最新投稿から余白を確保）
     st.markdown('<div style="background-color: white; width: 100%; padding: 20px; margin-top: 20px;">', unsafe_allow_html=True)
+    # 認証されていない場合、表示は1行だけ
     if not st.session_state.is_authenticated:
         st.markdown('<div style="padding: 5px;">認証されていないため返信はできません。</div>', unsafe_allow_html=True)
     if st.button("更新", key="chat_update"):

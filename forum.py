@@ -109,18 +109,20 @@ if "pending_delete_msg_id" not in st.session_state:
 # 新規質問投稿フォーム
 #####################################
 def show_new_question_form():
-    st.expander("新規質問を投稿する（クリックして開く）", expanded=False)
-    with st.container():
-        st.subheader("新規質問を投稿")
-        with st.form("new_question_form", clear_on_submit=False):
-            new_title = st.text_input("質問のタイトルを入力", key="new_title")
-            new_text = st.text_area("質問内容を入力", key="new_text")
-            new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
-            poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
-            auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
-            st.caption("認証キーは返信やタイトル削除等に必要です。")
-            submitted = st.form_submit_button("投稿")
-    
+    # 新規質問投稿フォーム全体のラッパー：背景色を黄緑 (#CCFFCC) に全体適用
+    st.markdown('<div style="background-color: #CCFFCC; padding: 20px; border-radius: 10px;">', unsafe_allow_html=True)
+    with st.expander("新規質問を投稿する（クリックして開く）", expanded=False):
+        with st.container():
+            st.subheader("新規質問を投稿")
+            with st.form("new_question_form", clear_on_submit=False):
+                new_title = st.text_input("質問のタイトルを入力", key="new_title")
+                new_text = st.text_area("質問内容を入力", key="new_text")
+                new_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="new_image")
+                poster_name = st.text_input("投稿者名 (空白の場合は匿名)", key="poster_name")
+                auth_key = st.text_input("認証キーを設定 (必須入力, 10文字まで)", type="password", key="new_auth_key", max_chars=10)
+                st.caption("認証キーは返信やタイトル削除等に必要です。")
+                submitted = st.form_submit_button("投稿")
+    st.markdown("</div>", unsafe_allow_html=True)
     if submitted:
         existing_titles = {doc.to_dict().get("title") for doc in fetch_all_questions()
                            if not doc.to_dict().get("question", "").startswith("[SYSTEM]生徒はこの質問フォームを削除しました")}
@@ -318,8 +320,7 @@ def show_chat_thread():
         </style>
         """,
         unsafe_allow_html=True
-    )   
-    
+    )
     docs = fetch_questions_by_title(selected_title)
     first_question_poster = "匿名"
     if docs:
@@ -388,62 +389,46 @@ def show_chat_thread():
                 unsafe_allow_html=True
             )
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-        # 背景を変えたい範囲の開始
-        st.markdown(
-            """
-            <style>
-            div.chat-container {
-                background-color: white;
-                padding: 20px;
-                border-radius: 10px;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
+    # 操作エリア全体：横幅100%、背景白、十分なパディング（最新投稿から約2行分の余白）
+    st.markdown('<div style="background-color: white; width: 100%; padding: 20px; margin-top: 20px;">', unsafe_allow_html=True)
+    # 認証されていない場合のメッセージは、操作エリアの上部に1行だけ表示
+    if not st.session_state.is_authenticated:
+        st.markdown('<div style="padding: 5px;">認証されていないため返信はできません。</div>', unsafe_allow_html=True)
+    if st.button("更新", key="chat_update"):
+        st.cache_resource.clear()
+        st.rerun()
+    if st.session_state.is_authenticated:
+        with st.expander("返信する", expanded=False):
+            st.markdown('<div style="background-color: white; width: 100%; padding: 10px;">', unsafe_allow_html=True)
+            with st.form("reply_form_student", clear_on_submit=True):
+                reply_text = st.text_area("メッセージを入力", key="reply_text")
+                reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
+                submitted = st.form_submit_button("送信")
+                if submitted:
+                    processed_reply = process_image(reply_image) if reply_image is not None else None
+                    if not reply_text.strip() and not reply_image:
+                        st.error("少なくともメッセージか画像を投稿してください。")
+                    else:
+                        time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
+                        db.collection("questions").add({
+                            "title": selected_title,
+                            "question": reply_text.strip(),
+                            "image": processed_reply,
+                            "timestamp": time_str,
+                            "deleted": 0,
+                            "poster": first_question_poster
+                        })
+                        st.cache_resource.clear()
+                        st.success("返信を送信しました！")
+                        st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.info("認証されていないため返信はできません。")
+    st.markdown("</div>", unsafe_allow_html=True)  # 操作エリア終了
+    if st.button("戻る", key="chat_back"):
+        st.session_state.selected_title = None
+        st.rerun()
 
-        st.markdown('<div class="chat-container">', unsafe_allow_html=True)  # ✅ 背景を変えたい範囲の開始
-
-        with st.container():
-            if st.button("更新", key=f"chat_update_{st.session_state.selected_title}"):
-                st.cache_resource.clear()
-                st.rerun()
-
-            if st.session_state.is_authenticated:
-                with st.expander("返信する", expanded=False):
-                    st.markdown('<div style="background-color: white; width: 100%; padding: 10px;">', unsafe_allow_html=True)
-                    with st.form("reply_form_student", clear_on_submit=True):
-                        reply_text = st.text_area("メッセージを入力", key="reply_text")
-                        reply_image = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg"], key="reply_image")
-                        submitted = st.form_submit_button("送信")
-                        if submitted:
-                            processed_reply = process_image(reply_image) if reply_image is not None else None
-                            if not reply_text.strip() and not reply_image:
-                                st.error("少なくともメッセージか画像を投稿してください。")
-                            else:
-                                time_str = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M:%S")
-                                db.collection("questions").add({
-                                    "title": selected_title,
-                                    "question": reply_text.strip(),
-                                    "image": processed_reply,
-                                    "timestamp": time_str,
-                                    "deleted": 0,
-                                    "poster": first_question_poster
-                                })
-                                st.cache_resource.clear()
-                                st.success("返信を送信しました！")
-                                st.rerun()
-                    st.markdown("</div>", unsafe_allow_html=True)
-            else:
-                st.info("認証されていないため返信はできません。")
-
-            if st.button("戻る", key="chat_back"):
-                st.session_state.selected_title = None
-                st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True)  # ✅ 背景を変えたい範囲の終了
-
-        
 if st.session_state.selected_title is None:
     show_title_list()
 else:
