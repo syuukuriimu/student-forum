@@ -218,7 +218,7 @@ def show_title_list():
                     st.session_state.pending_delete_title = title
                     st.rerun()
                 if st.session_state.pending_auth_title == title:
-                    st.warning(f"このタイトル「{title}」にアクセスするには認証キーが必要です。")
+                    st.warning(f"このタイトル「{title}」ついて返信・削除するには認証キーが必要です。閲覧のみなら認証キーは必要ありません。")
                     with st.form(key=f"auth_form_{idx}"):
                         input_auth_key = st.text_input("認証キーを入力", type="password")
                         col1, col2, col3 = st.columns(3)  # 3つのカラムを作成
